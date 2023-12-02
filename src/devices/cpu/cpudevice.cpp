@@ -4,6 +4,7 @@
 
 #include "devices/cpu/cpudevice.h"
 
+#include <algorithm>
 #include <cstring>
 #include <thread>
 
@@ -282,7 +283,7 @@ namespace fastllm {
         float *vd = (float*)v.cpuData;
         float *maskd = (datas.find("mask")->second && mask.dims.size() > 0) ? (float*)mask.cpuData : nullptr;
         float *od = (float*)output.cpuData;
-        int batch = intParams.find("q___batch")->second;
+        int batch = std::max(intParams.find("q___batch")->second, 1);
         int maskStride = (datas.find("mask")->second) ? (mask.dims.size() == 3 ? mask.strides[0] : mask.Count(0)) : 0;
         std::fill(od, od + output.Count(0), 0.0f);
         auto pool = GetPool();
