@@ -1778,7 +1778,7 @@ namespace fastllm {
         curExecutor->Run("Attention", {
                 {"q", (Data*)&q}, {"k", (Data*)&k}, {"v", (Data*)&v},
                 {"mask", (Data*)&mask}, {"output", (Data*)&output}
-        }, {{"scale", scale}}, {{"group", group}});
+        }, {{"scale", scale}}, {{"group", group}, {"q___batch", 1}});
     }
 
     void Embedding(const Data &input, Data &weight, Data &output) {
