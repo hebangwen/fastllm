@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <vector>
+#include <iostream>
 
 #if defined(_WIN32) or defined(_WIN64)
 #include <Windows.h>
@@ -74,9 +75,10 @@ namespace fastllm {
                (e > 143) * 0x7FFF; // sign : normalized : denormalized : saturate
     }
 
+    template <typename DurationRep=std::chrono::microseconds>
     static double GetSpan(std::chrono::system_clock::time_point time1, std::chrono::system_clock::time_point time2) {
         auto duration = std::chrono::duration_cast<std::chrono::microseconds> (time2 - time1);
-        return double(duration.count()) * std::chrono::microseconds::period::num / std::chrono::microseconds::period::den;
+        return double(duration.count()) * std::chrono::microseconds::period::num / std::chrono::microseconds::period::den * DurationRep::period::den;
     };
 
     static bool StartWith(const std::string &a, const std::string &b) {
@@ -121,17 +123,17 @@ namespace fastllm {
 
         void Record(const std::string &key) {
             auto now = std::chrono::system_clock::now();
-            v[key] += GetSpan(t, now);
+            v[key] += GetSpan<std::chrono::milliseconds>(t, now);
             t = now;
         }
 
         void Print() {
             float s = 0;
             for (auto &it: v) {
-                printf("%s: %f s.\n", it.first.c_str(), it.second);
+                printf("%s: %f ms.\n", it.first.c_str(), it.second);
                 s += it.second;
             }
-            printf("Total: %f s.\n", s);
+            printf("Total: %f ms.\n", s);
         }
     };
 
@@ -158,5 +160,14 @@ namespace fastllm {
     }
 #endif
 }
+
+
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
+    os << "[ ";
+    for (auto& elm : vec)  os << elm << " ";
+    return os << "]";
+}
+
 
 #endif //FASTLLM_UTILS_H

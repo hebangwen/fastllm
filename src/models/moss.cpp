@@ -16,8 +16,9 @@
 
 #include <unordered_map>
 
+#include <utils/utils.h>
+
 namespace fastllm {
-    extern double GetSpan(std::chrono::system_clock::time_point time1, std::chrono::system_clock::time_point time2);
 
     MOSSModel::MOSSModel() {
         this->model_type = "moss";
