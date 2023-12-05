@@ -135,6 +135,15 @@ namespace fastllm {
             }
             printf("Total: %f ms.\n", s);
         }
+
+        float StatAvg() {
+            float sum = 0.0f;
+            for (auto& it : v) {
+                sum += it.second;
+            }
+
+            return sum / v.size();
+        }
     };
 
 #ifdef __AVX__

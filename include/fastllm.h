@@ -303,6 +303,8 @@ namespace fastllm {
 
         void ToDevice(void *device);
 
+        void RandomizeData(); // 随机化数据
+
         void SetMapFile(std::shared_ptr<FileMmap> file) {
         	mapFile = file;
         }

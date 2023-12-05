@@ -2,15 +2,19 @@
 // Created by huangyuyang on 5/11/23.
 //
 
+#include "devices/cpu/cpudevice.h"
 #include "utils.h"
 
 #include "fastllm.h"
 
 #include "executor.h"
 
+#include <cstdio>
 #include <cstring>
 #include <cmath>
 #include <cfloat>
+#include <limits>
+#include <random>
 #include <thread>
 #include <algorithm>
 
@@ -256,6 +260,12 @@ namespace fastllm {
 
     Data::Data(const Data &ori) {
         CopyFrom(ori);
+        this->perChannelAxis = ori.perChannelAxis;
+        this->perChannelsConfigs = ori.perChannelsConfigs;
+        this->scales = ori.scales;
+        this->mins = ori.mins;
+        this->zeros = ori.zeros;
+        this->weightSum = ori.weightSum;
     }
 
     void Data::CopyFrom(const Data &ori) {
@@ -726,6 +736,51 @@ namespace fastllm {
             this->dataDeviceIds = deviceIds;
         };
         this->dataDevice = device;
+    }
+
+    void Data::RandomizeData() {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        if (dataType == INT8 || dataType == INT4 || dataType == INT4_NOZERO || dataType == INT16 || dataType == INT2 || dataType == INT32PARAM) {
+            auto len = GetBytes();
+            std::uniform_int_distribution<int8_t> distribution(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max());
+            for (uint64_t i = 0; i < len; i++) {
+                cpuData[i] = distribution(gen);
+            }
+
+            std::normal_distribution<float> gauss(0.0, 1.0);
+
+            int k = dims[0];
+            perChannelAxis = 0;
+            perChannelsConfigs.resize(k);
+            scales.resize(k);
+            mins.resize(k);
+            zeros.resize(k);
+            for (int i = 0; i < k; i++) {
+                if (dataType == INT8 || dataType == INT4) {
+                    perChannelsConfigs[i] = LowBitConfig(-1.0, 1.0, (dataType == INT8 ? 8 : 4), 0);
+                } else if (dataType == INT4_NOZERO) {
+                    perChannelsConfigs[i] = LowBitConfig(-1.0, 1.0, 4, 1);
+                }
+                scales[i] = gauss(gen);
+                mins[i] = gauss(gen);
+                zeros[i] = gauss(gen);
+            }
+        } else if (dataType == FLOAT32) {
+            std::uniform_real_distribution<float> distribution{};
+            auto size = Count(0);
+            auto* ptr = (float*) cpuData;
+            for (uint64_t i = 0; i < size; i++) {
+                ptr[i] = distribution(gen);
+            }
+        } else if (dataType == FLOAT16) {
+            std::uniform_real_distribution<float> distribution{};
+            auto size = Count(0);
+            auto* ptr = (uint16_t*) cpuData;
+            for (uint64_t i = 0; i < size; i++) {
+                ptr[i] = float_to_half(distribution(gen));
+            }
+        }
     }
 
     std::string GetModelTypeFromFile(const std::string &fileName) {

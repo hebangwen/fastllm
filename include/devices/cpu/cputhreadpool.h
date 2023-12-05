@@ -5,15 +5,43 @@
 #ifndef FASTLLCPUTHREADPOOL_H
 #define FASTLLCPUTHREADPOOL_H
 
+#include <cstring>
+#include <iostream>
 #include <mutex>
 #include <queue>
 #include <functional>
 #include <future>
+#include <sys/syscall.h>
 #include <thread>
+#include <unistd.h>
+#include <utils/utils.h>
 #include <utility>
 #include <vector>
 
 namespace fastllm {
+    inline int SchedSetAffinity(const std::vector<size_t> &cpu_ids) {
+        cpu_set_t mask;
+        CPU_ZERO(&mask);
+        for (auto cpu_id : cpu_ids) {
+            CPU_SET(cpu_id, &mask);
+        }
+
+        pid_t pid = syscall(SYS_gettid);
+        int err = sched_setaffinity(pid, sizeof(mask), &mask);
+        if (err) {
+            std::cout << "SchedSetAffinity failed: " << strerror(errno)
+                        << " pid " << pid
+                        << " cpu_ids " << cpu_ids << std::endl;
+            return 1;
+        } else {
+            std::cout << "SchedSetAffinity success:"
+                    << " pid " << pid
+                    << " cpu_ids " << cpu_ids << std::endl;
+            return 0;
+        }
+    }
+
+
     template <typename T>
     class TaskQueue {
     private:
