@@ -381,7 +381,9 @@ namespace fastllm {
         } else if (this->dataDevice == DataDevice::CUDA) {
 #ifdef USE_CUDA
             if (this->directMemory) {
-                this->cudaData = FastllmCudaDirectMalloc(this->expansionBytes);
+                // this->cudaData = FastllmCudaDirectMalloc(this->expansionBytes);
+                this->cudaData = FastllmCudaUnifiedMalloc(this->expansionBytes);
+                this->cpuData = (uint8_t*) this->cudaData;
             } else {
                 this->cudaData = FastllmCudaMalloc(this->expansionBytes);
             }
@@ -505,11 +507,17 @@ namespace fastllm {
 
     Data::~Data() {
 #ifndef USE_MMAP
+        if (!this->directMemory) {
         delete[] this->cpuData;
+        }
 #endif
 #ifdef USE_CUDA
         if (this->cudaData != nullptr) {
+            if (this->directMemory) {
+                FastllmCudaDirectFree(this->cudaData);
+            } else {
             FastllmCudaFree(this->cudaData);
+            }
             /*if (this->directMemory) {
                 FastllmCudaDirectFree(this->cudaData);
             } else {

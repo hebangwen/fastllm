@@ -1253,6 +1253,11 @@ bool FastllmCudaMatMulFloatInt4(const fastllm::Data &input, fastllm::Data &weigh
 }
 
 bool FastllmCudaMatMulFloatInt4NoZero(const fastllm::Data &input, fastllm::Data &weight, const fastllm::Data &bias, fastllm::Data &output, int n, int m, int k) {
+    if (weight.directMemory) {
+        cudaStreamAttachMemAsync(NULL, weight.cudaData, 0, cudaMemAttachGlobal);
+        cudaStreamAttachMemAsync(NULL, bias.cudaData, 0, cudaMemAttachGlobal);
+        cudaStreamAttachMemAsync(NULL, input.cudaData, 0, cudaMemAttachGlobal);
+    }
     if (weight.cudaData == nullptr || weight.extraCudaData.size() == 0) {
         float *cudaScales;
         cudaError_t state = cudaSuccess;
@@ -1343,6 +1348,7 @@ bool FastllmCudaMatMulFloatInt4NoZero(const fastllm::Data &input, fastllm::Data 
                                                                 m, k);
         }
     }
+    cudaDeviceSynchronize();
     FastllmCudaFinishInput(input, cudaInput);
     FastllmCudaFinishOutput(output, cudaOutput);
     return true;
@@ -1629,6 +1635,17 @@ void FastllmCudaClearBigBuffer() {
         bigBuffers = temp;
     }
     cudaSetDevice(id);
+}
+
+void* FastllmCudaUnifiedMalloc(size_t size) {
+    void * ret;
+    cudaError_t state = cudaMallocManaged(&ret, size, cudaMemAttachHost);
+    if (cudaSuccess != state) {
+        printf("Error: CUDA error when allocating %d kB memory! maybe there's no enough memory left on device.", size >> 10);
+        checkCudaErrors("", state);
+        return nullptr;
+    }
+    return ret;
 }
 
 void FastllmCudaCopyFromHostToDevice(void *dst, void *src, size_t size) {
