@@ -16,9 +16,6 @@
 
 #include <sstream>
 
-#include <string>
-#include <spdlog/spdlog.h>
-#include <spdlog/fmt/ranges.h>
 #include <unordered_map>
 
 #include <cstring>
@@ -127,9 +124,6 @@ namespace fastllm {
             weightMiddle = ".self_attention";
         }
 
-        // TimeRecord recorder;
-        // spdlog::set_level(spdlog::level::debug);
-
         // ChatGLM2
         Data inputIdsPermute;
         Permute(inputIds, {1, 0}, inputIdsPermute);
@@ -145,9 +139,7 @@ namespace fastllm {
             } else if (version == 2) {
                 std::string inputRMSWeightName =
                         "transformer.encoder.layers." + std::to_string(i) + ".input_layernorm.weight";
-                // recorder.Record();
                 RMSNorm(hiddenStates, weight[inputRMSWeightName], 1e-5, attenInput);
-                // recorder.Record("Norm End" + std::to_string(i));
             }
             std::string qkvWeightName = weightPre + std::to_string(i) + weightMiddle + ".query_key_value.weight";
             std::string qkvBiasName = weightPre + std::to_string(i) + weightMiddle + ".query_key_value.bias";
@@ -162,15 +154,7 @@ namespace fastllm {
                     IA3Layer(attenInput, weight[qkvWeightName], weight[ia3WeightName], weight[qkvBiasName], qkv, weight.peftDict[adapterName]);
                 }
             } else {
-                // QKV 通过一个线性层得到结果
-
-                // recorder.Record();
                 Linear(attenInput, weight[qkvWeightName], weight[qkvBiasName], qkv);
-                // recorder.Record("Linear End" + std::to_string(i));
-
-                spdlog::debug("attenInput shape: {}({}), weight shape: {}({}), bias shape: {}({}), qkv shape: {}({})",
-                              attenInput.dims, attenInput.dataType, weight[qkvWeightName].dims, weight[qkvWeightName].dataType,
-                              weight[qkvBiasName].dims, weight[qkvBiasName].dataType, qkv.dims, qkv.dataType);
             }
             if (version == 1) {
                 qkv.Reshape({qkv.dims[0], qkv.dims[1], num_attention_heads, -1});
@@ -182,7 +166,6 @@ namespace fastllm {
                 fastllm::RotatePosition2D(k, positionIds, sinData, cosData, rotary_dim);
             } else if (version == 2) {
                 int qLen = embed_dim, kvLen = (qkv.dims.back() - embed_dim) / 2;
-                // recorder.Record();
                 Split(qkv, -1, 0, qLen, q);
                 Split(qkv, -1, qLen, qLen + kvLen, k);
                 Split(qkv, -1, qLen + kvLen, qLen + kvLen + kvLen, v);
@@ -191,7 +174,6 @@ namespace fastllm {
                 v.Reshape({v.dims[0], v.dims[1], -1, embed_dim / num_attention_heads});
                 fastllm::NearlyRotatePosition2D(q, positionIds, sinData, cosData, rotary_dim);
                 fastllm::NearlyRotatePosition2D(k, positionIds, sinData, cosData, rotary_dim);
-                // recorder.Record("RotatePosition End" + std::to_string(i));
             }
 
             Data &pastKey = pastKeyValues[i].first, &pastValue = pastKeyValues[i].second;
@@ -203,7 +185,6 @@ namespace fastllm {
                 pastValue.ToDevice(DataDevice::CUDA);
             };
 
-            // recorder.Record();
             k.Resize({k.dims[0], k.dims[1] * k.dims[2], k.dims[3]});
             v.Resize({v.dims[0], v.dims[1] * v.dims[2], v.dims[3]});
 
@@ -249,14 +230,11 @@ namespace fastllm {
             }
             CatDirect(pastKey, k, 1);
             CatDirect(pastValue, v, 1);
-            // recorder.Record("BuildKvCache End" + std::to_string(i));
             std::vector<int> outputSize = {q.dims[1], q.dims[2], q.dims[0], pastKey.dims[1]};
             q.Reshape({q.dims[0], q.dims[1] * q.dims[2], q.dims[3]});
-            // recorder.Record();
             PermuteSelf(q, {1, 0, 2});
             Attention(q, pastKey, pastValue, attentionMask, contextLayer, q.dims[0] / pastKey.dims[0], 1.0 / scale_attn, 1);
 
-            // recorder.Record("Atten End" + std::to_string(i));
 /*
             // 1.2 Attention
             // 1.2.0 q * k^T
@@ -278,7 +256,6 @@ namespace fastllm {
             MatMul(attnProbs, pastValue, contextLayer);
 */
 
-            // recorder.Record();
             contextLayer.Reshape({batch, num_attention_heads, maxLen, -1});
             PermuteSelf(contextLayer, {2, 0, 1, 3});
             contextLayer.Reshape({contextLayer.dims[0], contextLayer.dims[1], embed_dim});
@@ -287,10 +264,6 @@ namespace fastllm {
             std::string denseWeightName = weightPre + std::to_string(i) + weightMiddle + ".dense.weight";
             std::string denseBiasName = weightPre + std::to_string(i) + weightMiddle + ".dense.bias";
             Linear(contextLayer, weight[denseWeightName], weight[denseBiasName], attnOutput);
-            // recorder.Record("FinalLinear End" + std::to_string(i));
-            spdlog::debug("contextLayer shape: {}({}), denseWeightName shape: {}({}), denseBiasName shape: {}({}), attenOut shape: {}({})",
-                            contextLayer.dims, contextLayer.dataType, weight[denseWeightName].dims, weight[denseWeightName].dataType,
-                            weight[denseBiasName].dims, weight[denseBiasName].dataType, attnOutput.dims, attnOutput.dataType);
 
             // 1.3
             if (GetVersion() == 1) {
@@ -310,38 +283,20 @@ namespace fastllm {
                 Linear(middle, weight[fcOutKeyName + ".weight"], weight[fcOutKeyName + ".bias"], hiddenStates);
                 AddTo(hiddenStates, mlpInput, alpha);
             } else {
-                // recorder.Record();
                 AddTo(hiddenStates, attnOutput);
                 std::string postRMSWeightName =
                         "transformer.encoder.layers." + std::to_string(i) + ".post_attention_layernorm.weight";
                 Mul(hiddenStates, 1.0, temp);
-                // recorder.Record("ShortCut End" + std::to_string(i));
-                // recorder.Record();
                 RMSNorm(hiddenStates, weight[postRMSWeightName], 1e-5, mlpInput);
-                // recorder.Record("Norm End" + std::to_string(i));
                 // 1.4 MLP
                 std::string fcInKeyName = "transformer.encoder.layers." + std::to_string(i) + ".mlp.dense_h_to_4h";
                 std::string fcOutKeyName = "transformer.encoder.layers." + std::to_string(i) + ".mlp.dense_4h_to_h";
-                // recorder.Record();
                 Linear(mlpInput, weight[fcInKeyName + ".weight"], weight[fcInKeyName + ".bias"], middle);
-                // [ 1 1 4096 ], [ 27392 4096 ], [ ]
-                spdlog::debug("mlpInput shape: {}({}), ffn1Weight shape: {}({}), ffn1bias shape: {}({}), ffn1Out shape: {}({})",
-                              mlpInput.dims, mlpInput.dataType, weight[fcInKeyName + ".weight"].dims, weight[fcInKeyName + ".weight"].dataType,
-                              weight[fcInKeyName + ".bias"].dims, weight[fcInKeyName + ".bias"].dataType, middle.dims, middle.dataType);
                 Swiglu(middle, middle2);
-                // recorder.Record("FFNLinear1 End" + std::to_string(i));
-                // recorder.Record();
                 Linear(middle2, weight[fcOutKeyName + ".weight"], weight[fcOutKeyName + ".bias"], hiddenStates);
-                // [ 1 1 13696 ], [ 4096 13696 ], [ ]
-                spdlog::debug("middle2 shape: {}({}), ffn2Weight shape: {}({}), ffn2bias shape: {}({}), hidenState shape: {}({})",
-                              middle2.dims, middle2.dataType, weight[fcOutKeyName + ".weight"].dims, weight[fcOutKeyName + ".weight"].dataType,
-                              weight[fcOutKeyName + ".bias"].dims, weight[fcOutKeyName + ".bias"].dataType, hiddenStates.dims, hiddenStates.dataType);
                 AddTo(hiddenStates, temp);
-                // recorder.Record("FFNLinear2 End" + std::to_string(i));
             }
         }
-
-        // recorder.Print();
 
         Data logits, topk;
         Data tempHiddenStates;

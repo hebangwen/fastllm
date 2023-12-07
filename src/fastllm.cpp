@@ -752,8 +752,15 @@ namespace fastllm {
         if (dataType == INT8 || dataType == INT4 || dataType == INT4_NOZERO || dataType == INT16 || dataType == INT2 || dataType == INT32PARAM) {
             auto len = GetBytes();
             std::uniform_int_distribution<int8_t> distribution(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max());
-            for (uint64_t i = 0; i < len; i++) {
-                cpuData[i] = distribution(gen);
+            static uint8_t data[8] = {
+                0b00010010, 0b00100100, 0b01001000, 0b10000001,
+                0b00110110, 0b01101100, 0b11001001, 0b10010011
+            };
+            for (uint64_t i = 0; i < len - 8; i += 8) {
+                memcpy(cpuData + i, data, sizeof(data));
+            }
+            if ((len & 7) != 0) {
+                memcpy(cpuData + (len & (~7)), data, sizeof(uint8_t) * (len & 7));
             }
 
             std::normal_distribution<float> gauss(0.0, 1.0);

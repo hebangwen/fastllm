@@ -1252,11 +1252,10 @@ bool FastllmCudaMatMulFloatInt4(const fastllm::Data &input, fastllm::Data &weigh
     return true;
 }
 
-bool FastllmCudaMatMulFloatInt4NoZero(const fastllm::Data &input, fastllm::Data &weight, const fastllm::Data &bias, fastllm::Data &output, int n, int m, int k) {
+void FastllmCreateInt4ExtraData(fastllm::Data& weight, int k, fastllm::Data &bias) {
     if (weight.directMemory) {
         cudaStreamAttachMemAsync(NULL, weight.cudaData, 0, cudaMemAttachGlobal);
         cudaStreamAttachMemAsync(NULL, bias.cudaData, 0, cudaMemAttachGlobal);
-        cudaStreamAttachMemAsync(NULL, input.cudaData, 0, cudaMemAttachGlobal);
     }
     if (weight.cudaData == nullptr || weight.extraCudaData.size() == 0) {
         float *cudaScales;
@@ -1267,12 +1266,44 @@ bool FastllmCudaMatMulFloatInt4NoZero(const fastllm::Data &input, fastllm::Data 
 
         float *cudaMins;
         state = cudaMalloc(&cudaMins, k * sizeof(float));
-        float *mins = new float[k];
-        for (int i = 0; i < k; i++) {
-            mins[i] = weight.perChannelsConfigs[i].min;
+        state = cudaMemcpy(cudaMins, weight.mins.data(), k * sizeof(float), cudaMemcpyHostToDevice);
+        weight.extraCudaData.push_back((void*)cudaMins);
+
+        float *cudaBiasData;
+        state = cudaMalloc(&cudaBiasData, k * sizeof(float));
+        if (bias.dims.size() > 0) {
+            state = cudaMemcpy(cudaBiasData, (uint8_t*)bias.cudaData, k * sizeof(float), cudaMemcpyDeviceToDevice);
+        } else {
+            state = cudaMemset(cudaBiasData, 0, k * sizeof(float));
         }
-        state = cudaMemcpy(cudaMins, mins, k * sizeof(float), cudaMemcpyHostToDevice);
-        delete[] mins;
+        checkCudaErrors("Error: CUDA error when moving bias to device!", state);
+        weight.extraCudaData.push_back((void*)cudaBiasData);
+    }   
+}
+
+bool FastllmCudaMatMulFloatInt4NoZero(const fastllm::Data &input, fastllm::Data &weight, const fastllm::Data &bias, fastllm::Data &output, int n, int m, int k) {
+    // auto start = std::chrono::system_clock::now();
+    if (weight.directMemory) {
+        // cudaStreamAttachMemAsync(NULL, weight.cudaData, 0, cudaMemAttachGlobal);
+        // cudaStreamAttachMemAsync(NULL, bias.cudaData, 0, cudaMemAttachGlobal);
+        cudaStreamAttachMemAsync(NULL, input.cudaData, 0, cudaMemAttachGlobal);
+    }
+    // auto end1 = std::chrono::system_clock::now();
+    if (weight.cudaData == nullptr || weight.extraCudaData.size() == 0) {
+        float *cudaScales;
+        cudaError_t state = cudaSuccess;
+        state = cudaMalloc(&cudaScales, k * sizeof(float));
+        state = cudaMemcpy(cudaScales, weight.scales.data(), k * sizeof(float), cudaMemcpyHostToDevice);
+        weight.extraCudaData.push_back((void*)cudaScales);
+
+        float *cudaMins;
+        state = cudaMalloc(&cudaMins, k * sizeof(float));
+        // float *mins = new float[k];
+        // for (int i = 0; i < k; i++) {
+        //     mins[i] = weight.perChannelsConfigs[i].min;
+        // }
+        state = cudaMemcpy(cudaMins, weight.mins.data(), k * sizeof(float), cudaMemcpyHostToDevice);
+        // delete[] mins;
         weight.extraCudaData.push_back((void*)cudaMins);
 
         float *cudaBiasData;
@@ -1285,6 +1316,7 @@ bool FastllmCudaMatMulFloatInt4NoZero(const fastllm::Data &input, fastllm::Data 
         checkCudaErrors("Error: CUDA error when moving bias to device!", state);
         weight.extraCudaData.push_back((void*)cudaBiasData);
     }
+    // auto end2 = std::chrono::system_clock::now();
 
     float *cudaScales = (float*)weight.extraCudaData[0];
     float *cudaMins = (float*)weight.extraCudaData[1];
@@ -1348,7 +1380,15 @@ bool FastllmCudaMatMulFloatInt4NoZero(const fastllm::Data &input, fastllm::Data 
                                                                 m, k);
         }
     }
-    cudaDeviceSynchronize();
+    // auto end3 = std::chrono::system_clock::now();
+    // if (weight.directMemory) {
+    //     cudaDeviceSynchronize();
+    // }
+    // auto end4 = std::chrono::system_clock::now();
+    // std::cout << std::chrono::duration_cast<std::chrono::microseconds>(end1 - start).count() << "us "
+    //     << std::chrono::duration_cast<std::chrono::microseconds>(end2 - end1).count() << "us "
+    //     << std::chrono::duration_cast<std::chrono::microseconds>(end3 - end2).count() << "us "
+    //     << std::chrono::duration_cast<std::chrono::microseconds>(end4 - end3).count() << "us " << std::endl;
     FastllmCudaFinishInput(input, cudaInput);
     FastllmCudaFinishOutput(output, cudaOutput);
     return true;

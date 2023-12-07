@@ -13,6 +13,8 @@ void * FastllmCudaDirectMalloc(size_t size);
 void FastllmCudaDirectFree(void *ret);
 void* FastllmCudaUnifiedMalloc(size_t size);
 
+void FastllmCreateInt4ExtraData(fastllm::Data& weight, int k, fastllm::Data &bias);
+
 void FastllmCudaCopyFromHostToDevice(void *dst, void *src, size_t size);
 void FastllmCudaCopyFromDeviceToHost(void *dst, void *src, size_t size);
 void FastllmCudaCopyFromDeviceToDevice(void *dst, void *src, size_t size);

@@ -2,6 +2,7 @@
 
 #ifdef USE_CUDA
 #include "cudadevice.h"
+#include "fastllm-cuda.cuh"
 #endif
 
 #include "executor.h"
@@ -15,6 +16,8 @@
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
+
+// #define USE_DISCRETE_CUDA
 
 struct BenchmarkConfig {
   int n_;
@@ -84,17 +87,18 @@ float BenchmarkByPartRatio(const RunConfig &runCfg,
   fastllm::Data input{fastllm::FLOAT32, {benchmarkCfg.n_, benchmarkCfg.m_}};
   fastllm::Data middle;
 
-// #ifdef USE_CUDA
-//   input.dataDevice = middle.dataDevice = fastllm::CUDA;
-//   input.directMemory = middle.directMemory = true;
-// #endif
+#ifdef USE_CUDA
+#ifndef USE_DISCRETE_CUDA
+  // discrete_cuda 不使用统一内存，但是速度较快
+  input.dataDevice = fastllm::CUDA;
+  input.directMemory = true;
+#endif
 
   input.Allocate();
   input.RandomizeData();
-#ifdef USE_CUDA
-  if (!input.directMemory) {
-    input.ToDevice(fastllm::CUDA);
-  }
+#ifdef USE_DISCRETE_CUDA
+  input.ToDevice(fastllm::CUDA);
+#endif
 #endif
 
   fastllm::TimeRecord recorder;
@@ -103,11 +107,12 @@ float BenchmarkByPartRatio(const RunConfig &runCfg,
                          CalculatePartResult(benchmarkCfg.k_, benchmarkCfg.m_,
                                              benchmarkCfg.partRatio_, PART_K)};
     fastllm::Data bias{benchmarkCfg.biasType_};
-  
-// #ifdef USE_CUDA
-//     weight.dataDevice = bias.dataDevice = fastllm::CUDA;
-//     weight.directMemory = bias.directMemory = true;
-// #endif
+#ifdef USE_CUDA
+#ifndef USE_DISCRETE_CUDA
+    weight.dataDevice = fastllm::CUDA;
+    weight.directMemory = true;
+#endif
+#endif
 
     weight.Allocate();
     weight.RandomizeData();
@@ -117,10 +122,13 @@ float BenchmarkByPartRatio(const RunConfig &runCfg,
       bias.RandomizeData();
     }
 #ifdef USE_CUDA
-    if (!weight.directMemory) {
-      weight.ToDevice(fastllm::CUDA);
-      bias.ToDevice(fastllm::CUDA);
-    }
+#ifdef USE_DISCRETE_CUDA
+    weight.ToDevice(fastllm::CUDA);
+    bias.ToDevice(fastllm::CUDA);
+#endif
+
+    // 先分配好 extradata，避免在 kernel 前要分配数据
+    FastllmCreateInt4ExtraData(weight, weight.dims[0], bias);
 #endif
 
     recorder.Record();
@@ -171,3 +179,4 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+

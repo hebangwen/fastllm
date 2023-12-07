@@ -80,9 +80,9 @@ target_link_libraries(fastllm PUBLIC ${FASTLLM_LINKED_LIBS})
 add_executable(main main.cpp)
 target_link_libraries(main fastllm)
 
-add_executable(quant tools/src/quant.cpp)
-target_link_libraries(quant fastllm)
-
+# add_executable(quant tools/src/quant.cpp)
+# target_link_libraries(quant fastllm)
+# 
 # add_executable(testOps test/ops/cppOps.cpp)
 # target_link_libraries(testOps fastllm)
 # 
@@ -100,10 +100,9 @@ target_link_libraries(quant fastllm)
 # 
 # add_executable(apiserver example/apiserver/apiserver.cpp example/apiserver/json11.cpp)
 # target_link_libraries(apiserver fastllm)
-
+# 
 # add_library(fastllm_tools SHARED ${FASTLLM_CXX_SOURCES} ${FASTLLM_CUDA_SOURCES} tools/src/pytools.cpp)
 # target_link_libraries(fastllm_tools PUBLIC ${FASTLLM_LINKED_LIBS})
-
 add_subdirectory(test/bangwen)
 
 # if (${CMAKE_HOST_WIN32})
