@@ -33,6 +33,8 @@ set(FASTLLM_CXX_SOURCES src/fastllm.cpp src/device.cpp src/model.cpp src/executo
         src/devices/cpu/cpudevice.cpp src/devices/cpu/cpudevicebatch.cpp
         src/models/chatglm.cpp src/models/moss.cpp src/models/llama.cpp src/models/qwen.cpp src/models/basellm.cpp src/models/glm.cpp)
 
+add_subdirectory(third_party/spdlog)
+set(FASTLLM_LINKED_LIBS ${FASTLLM_LINKED_LIBS} spdlog::spdlog)
 include_directories(include)
 include_directories(include/utils)
 include_directories(include/models)
@@ -83,51 +85,51 @@ target_link_libraries(main fastllm)
 add_executable(quant tools/src/quant.cpp)
 target_link_libraries(quant fastllm)
 
-add_executable(testOps test/ops/cppOps.cpp)
-target_link_libraries(testOps fastllm)
+# add_executable(testOps test/ops/cppOps.cpp)
+# target_link_libraries(testOps fastllm)
 
-add_executable(webui example/webui/webui.cpp)
-target_link_libraries(webui fastllm)
-add_custom_command(
-        TARGET webui
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory web
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/example/webui/web ${CMAKE_BINARY_DIR}/web
-)
+# add_executable(webui example/webui/webui.cpp)
+# target_link_libraries(webui fastllm)
+# add_custom_command(
+#         TARGET webui
+#         POST_BUILD
+#         COMMAND ${CMAKE_COMMAND} -E make_directory web
+#         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/example/webui/web ${CMAKE_BINARY_DIR}/web
+# )
 
 add_executable(benchmark example/benchmark/benchmark.cpp)
 target_link_libraries(benchmark fastllm)
 
-add_executable(apiserver example/apiserver/apiserver.cpp example/apiserver/json11.cpp)
-target_link_libraries(apiserver fastllm)
+# add_executable(apiserver example/apiserver/apiserver.cpp example/apiserver/json11.cpp)
+# target_link_libraries(apiserver fastllm)
 
-add_library(fastllm_tools SHARED ${FASTLLM_CXX_SOURCES} ${FASTLLM_CUDA_SOURCES} tools/src/pytools.cpp)
-target_link_libraries(fastllm_tools PUBLIC ${FASTLLM_LINKED_LIBS})
+# add_library(fastllm_tools SHARED ${FASTLLM_CXX_SOURCES} ${FASTLLM_CUDA_SOURCES} tools/src/pytools.cpp)
+# target_link_libraries(fastllm_tools PUBLIC ${FASTLLM_LINKED_LIBS})
 
 add_subdirectory(test/bangwen)
 
-if (${CMAKE_HOST_WIN32})
-    add_custom_command(
-            TARGET fastllm_tools
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory tools
-            COMMAND ${CMAKE_COMMAND} -E make_directory tools/fastllm_pytools
-            COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/fastllm_pytools ${CMAKE_BINARY_DIR}/tools/fastllm_pytools/.
-            COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/scripts ${CMAKE_BINARY_DIR}/tools/.
-            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/fastllm_tools.dll ${CMAKE_BINARY_DIR}/tools/fastllm_pytools/.
-            COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_BINARY_DIR}/fastllm_tools.dll
-    )
-else()
-    add_custom_command(
-            TARGET fastllm_tools
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory tools
-            COMMAND ${CMAKE_COMMAND} -E make_directory tools/fastllm_pytools
-            COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/fastllm_pytools ${CMAKE_BINARY_DIR}/tools/fastllm_pytools/.
-            COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/scripts ${CMAKE_BINARY_DIR}/tools/.
-            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/libfastllm_tools.* ${CMAKE_BINARY_DIR}/tools/fastllm_pytools/.
-            COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_BINARY_DIR}/libfastllm_tools.*
-    )
-endif()
+# if (${CMAKE_HOST_WIN32})
+#     add_custom_command(
+#             TARGET fastllm_tools
+#             POST_BUILD
+#             COMMAND ${CMAKE_COMMAND} -E make_directory tools
+#             COMMAND ${CMAKE_COMMAND} -E make_directory tools/fastllm_pytools
+#             COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/fastllm_pytools ${CMAKE_BINARY_DIR}/tools/fastllm_pytools/.
+#             COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/scripts ${CMAKE_BINARY_DIR}/tools/.
+#             COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/fastllm_tools.dll ${CMAKE_BINARY_DIR}/tools/fastllm_pytools/.
+#             COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_BINARY_DIR}/fastllm_tools.dll
+#     )
+# else()
+#     add_custom_command(
+#             TARGET fastllm_tools
+#             POST_BUILD
+#             COMMAND ${CMAKE_COMMAND} -E make_directory tools
+#             COMMAND ${CMAKE_COMMAND} -E make_directory tools/fastllm_pytools
+#             COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/fastllm_pytools ${CMAKE_BINARY_DIR}/tools/fastllm_pytools/.
+#             COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/scripts ${CMAKE_BINARY_DIR}/tools/.
+#             COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/libfastllm_tools.* ${CMAKE_BINARY_DIR}/tools/fastllm_pytools/.
+#             COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_BINARY_DIR}/libfastllm_tools.*
+#     )
+# endif()
 
 endif()
