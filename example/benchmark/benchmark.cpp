@@ -5,6 +5,7 @@
 #include "model.h"
 #include "utils.h"
 #include "fstream"
+#include <chrono>
 
 #if defined(_WIN32) or defined(_WIN64)
 #include <codecvt>
@@ -134,8 +135,8 @@ int main(int argc, char **argv) {
             }
         }
     }, generationConfig);
-    float promptSpend = fastllm::GetSpan(st, promptTime);
-    float spend = fastllm::GetSpan(promptTime, std::chrono::system_clock::now());
+    float promptSpend = fastllm::GetSpan<std::chrono::seconds>(st, promptTime);
+    float spend = fastllm::GetSpan<std::chrono::seconds>(promptTime, std::chrono::system_clock::now());
 
     if (config.output != "") {
         FILE *fo = fopen(config.output.c_str(), "w");

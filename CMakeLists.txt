@@ -104,6 +104,8 @@ target_link_libraries(apiserver fastllm)
 add_library(fastllm_tools SHARED ${FASTLLM_CXX_SOURCES} ${FASTLLM_CUDA_SOURCES} tools/src/pytools.cpp)
 target_link_libraries(fastllm_tools PUBLIC ${FASTLLM_LINKED_LIBS})
 
+add_subdirectory(test/bangwen)
+
 if (${CMAKE_HOST_WIN32})
     add_custom_command(
             TARGET fastllm_tools
