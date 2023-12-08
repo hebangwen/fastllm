@@ -739,8 +739,7 @@ namespace fastllm {
     }
 
     void Data::RandomizeData() {
-        std::random_device rd;
-        std::mt19937 gen(rd());
+        std::mt19937 gen(42);
         if (dataType == INT8 || dataType == INT4 || dataType == INT4_NOZERO || dataType == INT16 || dataType == INT2 || dataType == INT32PARAM) {
             auto len = GetBytes();
             std::uniform_int_distribution<int8_t> distribution(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max());
@@ -757,14 +756,14 @@ namespace fastllm {
             mins.resize(k);
             zeros.resize(k);
             for (int i = 0; i < k; i++) {
-                if (dataType == INT8 || dataType == INT4) {
-                    perChannelsConfigs[i] = LowBitConfig(-1.0, 1.0, (dataType == INT8 ? 8 : 4), 0);
-                } else if (dataType == INT4_NOZERO) {
-                    perChannelsConfigs[i] = LowBitConfig(-1.0, 1.0, 4, 1);
-                }
                 scales[i] = gauss(gen);
                 mins[i] = gauss(gen);
                 zeros[i] = gauss(gen);
+                if (dataType == INT8 || dataType == INT4) {
+                    perChannelsConfigs[i] = LowBitConfig(mins[i], 1.0, (dataType == INT8 ? 8 : 4), 0);
+                } else if (dataType == INT4_NOZERO) {
+                    perChannelsConfigs[i] = LowBitConfig(mins[i], 1.0, 4, 1);
+                }
             }
         } else if (dataType == FLOAT32) {
             std::uniform_real_distribution<float> distribution{};
