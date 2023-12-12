@@ -35,6 +35,9 @@ set(FASTLLM_CXX_SOURCES src/fastllm.cpp src/device.cpp src/model.cpp src/executo
 
 add_subdirectory(third_party/spdlog)
 set(FASTLLM_LINKED_LIBS ${FASTLLM_LINKED_LIBS} spdlog::spdlog)
+add_subdirectory(third_party/mace)
+set(FASTLLM_LINKED_LIBS ${FASTLLM_LINKED_LIBS} mace_static)
+
 include_directories(include)
 include_directories(include/utils)
 include_directories(include/models)
