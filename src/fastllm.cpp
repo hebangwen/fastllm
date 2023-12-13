@@ -2166,4 +2166,28 @@ namespace fastllm {
     std::map <std::string, int> GetDeviceMap() {
         return defaultDeviceMap;
     }
+
+    void ConvertInt4NoZeroToFloat(fastllm::Data &weight,
+                              fastllm::Data &weightFloat) {
+        weightFloat.dataType = fastllm::FLOAT32;
+        weightFloat.Resize(weight.dims);
+        weightFloat.Allocate();
+
+        float *weightFloatPtr = (float *)weightFloat.cpuData;
+        uint8_t *weightPtr = weight.cpuData;
+        int k = weight.dims[0], m = weight.dims[1];
+
+        for (int i = 0; i < k; i++) {
+            for (int j = 0; j < (m >> 1); j++) {
+            weightFloatPtr[i * m + j * 2] =
+                weight.perChannelsConfigs[i].invQuantization(
+                    weightPtr[i * (m >> 1) + j] >> 4);
+            weightFloatPtr[i * m + j * 2 + 1] =
+                weight.perChannelsConfigs[i].invQuantization(
+                    weightPtr[i * (m >> 1) + j] & 15);
+            }
+        }
+    }
+
+
 }
