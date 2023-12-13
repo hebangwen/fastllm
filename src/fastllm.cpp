@@ -747,7 +747,7 @@ namespace fastllm {
                 cpuData[i] = distribution(gen);
             }
 
-            std::normal_distribution<float> gauss(0.0, 1.0);
+            std::normal_distribution<float> gauss(-1.0, 0.0);
 
             int k = dims[0];
             perChannelAxis = 0;
@@ -756,14 +756,15 @@ namespace fastllm {
             mins.resize(k);
             zeros.resize(k);
             for (int i = 0; i < k; i++) {
-                scales[i] = gauss(gen);
                 mins[i] = gauss(gen);
-                zeros[i] = gauss(gen);
                 if (dataType == INT8 || dataType == INT4) {
                     perChannelsConfigs[i] = LowBitConfig(mins[i], 1.0, (dataType == INT8 ? 8 : 4), 0);
                 } else if (dataType == INT4_NOZERO) {
                     perChannelsConfigs[i] = LowBitConfig(mins[i], 1.0, 4, 1);
                 }
+                scales[i] = perChannelsConfigs[i].scale;
+                zeros[i] = perChannelsConfigs[i].zeroPoint;
+                mins[i] = perChannelsConfigs[i].min;
             }
         } else if (dataType == FLOAT32) {
             std::uniform_real_distribution<float> distribution{};
