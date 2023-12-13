@@ -7,4 +7,4 @@
 	url = https://github.com/gabime/spdlog.git
 [submodule "third_party/mace"]
 	path = third_party/mace
-	url = https://github.com/xiaomi/mace.git
+	url = https://github.com/hebangwen/mace.git
