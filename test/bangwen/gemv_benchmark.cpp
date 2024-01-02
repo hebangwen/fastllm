@@ -124,8 +124,6 @@ float BenchmarkByPartRatio(const RunConfig &runCfg,
 #ifdef USE_CUDA
       weight.ToDevice(fastllm::CUDA);
       bias.ToDevice(fastllm::CUDA);
-#else
-      return 0.0f;
 #endif
       recorder.Record();
       fastllm::Linear(input, weight, bias, middle);
@@ -174,7 +172,9 @@ float BenchmarkByPartRatio(const RunConfig &runCfg,
       conv2d.Compute(opContext, inputTrans, filter, maceBias, strides,
                      mace::VALID, paddings, dilation, mace::ops::NOOP, 0, 0, 0,
                      output);
+
       recorder.Record();
+      fastllm::ConvertInt4NoZeroToFloat(weight, weightFloat);
       transform.Compute(opContext, maceInput, mace::IN_OUT_CHANNEL, 0,
                         inputTrans);
       conv2d.Compute(opContext, inputTrans, filter, maceBias, strides,
@@ -210,7 +210,8 @@ int main(int argc, char **argv) {
   csvResult.push_back("k,m,weighttype,biastype,hasbias,device,ratio,time");
 
   std::vector<BenchmarkConfig::Device> devices = {
-      BenchmarkConfig::BENCH_FASTLLM_CPU, BenchmarkConfig::BENCH_MACE_OPENCL};
+      BenchmarkConfig::BENCH_FASTLLM_CPU, 
+      BenchmarkConfig::BENCH_MACE_OPENCL};
   std::vector<std::string> deviceIdToName = {"CPU", "CUDA", "OPENCL"};
 
   for (auto &device : devices) {

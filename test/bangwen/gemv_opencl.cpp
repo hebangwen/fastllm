@@ -23,7 +23,7 @@
 #include "mace/ops/opencl/image/matmul.h"
 #include "spdlog/common.h"
 #include <CL/cl.h>
-#include <CL/opencl.hpp>
+#include <CL/cl2.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <fastllm.h>
@@ -74,12 +74,12 @@ int main() {
   bias.Allocate();
   bias.RandomizeData();
 
+  fastllm::TimeRecord recorder;
 #ifdef USE_CUDA
   input.ToDevice(fastllm::CUDA);
   weight.ToDevice(fastllm::CUDA);
   bias.ToDevice(fastllm::CUDA);
 
-  fastllm::TimeRecord recorder;
   fastllm::Data result;
   for (int i = 0; i < benchmarkRounds; i++) {
     recorder.Record();
