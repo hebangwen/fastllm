@@ -1,6 +1,7 @@
 #include "spdlog/fmt/bundled/core.h"
 #include "spdlog/fmt/bundled/format.h"
 #include "utils.h"
+#include <cstdint>
 #define CL_TARGET_OPENCL_VERSION 300
 #define CL_HPP_TARGET_OPENCL_VERSION 300
 
@@ -63,23 +64,23 @@ cl::Program buildProgram(cl::Context &context, cl::Device &targetDevice,
 int main() {
   spdlog::set_level(spdlog::level::debug);
   std::string kernelFilePath = "linear.cl";
-  int benchmarkRounds = 20;
+  int benchmarkRounds = 10;
 
   fastllm::Data input{fastllm::FLOAT32, {1, 4096}};
   input.Allocate(0.5f);
   fastllm::Data weight{fastllm::INT4_NOZERO, {4608, 4096}};
   weight.Allocate();
   weight.RandomizeData();
+  weight.Allocate((uint8_t)1);
   fastllm::Data bias{fastllm::FLOAT32, {4608}};
-  bias.Allocate();
-  bias.RandomizeData();
+  bias.Allocate(0.0f);
 
+  fastllm::TimeRecord recorder;
 #ifdef USE_CUDA
   input.ToDevice(fastllm::CUDA);
   weight.ToDevice(fastllm::CUDA);
   bias.ToDevice(fastllm::CUDA);
 
-  fastllm::TimeRecord recorder;
   fastllm::Data result;
   for (int i = 0; i < benchmarkRounds; i++) {
     recorder.Record();
@@ -104,6 +105,9 @@ int main() {
     recorder.Record(spdlog::fmt_lib::format("CPU {:02d}", i));
   }
 
+  // int warpSize = 64;
+  int warpSize = 256;
+  fastllm::Data input2(input);
   fastllm::Data result2{fastllm::FLOAT32, {1, 4096}};
   result2.Allocate();
 
@@ -127,8 +131,10 @@ int main() {
   cl::Context context{
       device, new cl_context_properties[]{
                   CL_CONTEXT_PLATFORM, (cl_context_properties)platform(), 0}};
+  std::string compileOptions{COMPILE_OPTIONS};
+  compileOptions += fmt::format(" -DLOCAL_SIZE={}", warpSize);
   cl::Program program =
-      buildProgram(context, device, {kernelFilePath}, COMPILE_OPTIONS);
+      buildProgram(context, device, {kernelFilePath}, compileOptions);
   cl::CommandQueue queue{context, device};
 
   cl::Buffer bufferA{context, CL_MEM_READ_WRITE, input.GetBytes()};
@@ -139,6 +145,8 @@ int main() {
                           weight.scales.size() * sizeof(float)};
   cl::Buffer bufferMins{context, CL_MEM_READ_WRITE,
                         weight.mins.size() * sizeof(float)};
+  cl::Buffer memAligned{context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
+                        input.GetBytes()};
   int m = weight.dims[1], k = weight.dims[0];
 
   cl_int ret = CL_SUCCESS;
@@ -153,11 +161,27 @@ int main() {
   ret |= queue.enqueueWriteBuffer(bufferMins, CL_TRUE, 0, m * sizeof(float),
                                   weight.mins.data());
 
-  FASTLLM_CHECK_CL_SUCCESS(ret, "enqueue write buffer");
+  float *inputMap = (float *)queue.enqueueMapBuffer(
+      memAligned, CL_TRUE, CL_MAP_READ | CL_MAP_WRITE, 0, input.GetBytes());
+  // std::memcpy(inputMap, input.cpuData, input.GetBytes());
+  std::memcpy(inputMap, input2.cpuData, input2.GetBytes());
+  ret |= queue.enqueueUnmapMemObject(memAligned, inputMap);
+  ret |= queue.finish();
 
-  cl::Kernel kernel{program, "GemvFloatInt4NoZero"};
+  FASTLLM_CHECK_CL_SUCCESS(ret, "enqueue write buffer");
+  spdlog::debug("a pointer: {:p} {:p}, size: {}, bytes: {}, a[1024]: {}",
+                fmt::ptr(input.cpuData), fmt::ptr(input.cpuDataMalloced),
+                input.Count(0), input.GetBytes(),
+                ((float *)input.cpuData)[1024]);
+
+  cl::Kernel kernel{program, "GemvFloatInt4NoZero4"};
+  // cl::Kernel kernel{program, "GemvFloatInt4NoZero2"};
+  // cl::Kernel kernel{program, "gemv_quantized"};
+  // cl::Kernel kernel{program, "gemv_kernel"};
+
   int idx = 0;
-  ret |= kernel.setArg(idx++, bufferA);
+  // ret |= kernel.setArg(idx++, bufferA);
+  ret |= kernel.setArg(idx++, memAligned);
   ret |= kernel.setArg(idx++, bufferB);
   ret |= kernel.setArg(idx++, bufferC);
   ret |= kernel.setArg(idx++, bufferBias);
@@ -165,17 +189,38 @@ int main() {
   ret |= kernel.setArg(idx++, bufferMins);
   ret |= kernel.setArg(idx++, m);
   ret |= kernel.setArg(idx++, k);
-  FASTLLM_CHECK_CL_SUCCESS(ret, "kernel set args");
 
-  int warpSize = 256;
+  // ret |= kernel.setArg(idx++, bufferB);
+  // ret |= kernel.setArg(idx++, bufferA);
+  // ret |= kernel.setArg(idx++, bufferC);
+  // ret |= kernel.setArg(idx++, k);
+  // ret |= kernel.setArg(idx++, m);
+  // ret |= kernel.setArg(idx++, bufferScales);
+  // ret |= kernel.setArg(idx++, bufferMins);
+
+  // ret |= kernel.setArg(idx++, bufferB);
+  // ret |= kernel.setArg(idx++, bufferA);
+  // ret |= kernel.setArg(idx++, bufferC);
+  // ret |= kernel.setArg(idx++, bufferBias);
+  // ret |= kernel.setArg(idx++, k);
+  // ret |= kernel.setArg(idx++, m);
+  // ret |= kernel.setArg(idx++, bufferScales);
+  // ret |= kernel.setArg(idx++, bufferMins);
+  FASTLLM_CHECK_CL_SUCCESS(ret, "kernel set args");
 
   for (int i = 0; i < benchmarkRounds; i++) {
     recorder.Record();
     ret |= queue.enqueueNDRangeKernel(kernel, cl::NullRange,
                                       cl::NDRange(k, warpSize),
                                       cl::NDRange(1, warpSize));
+    // ret |= queue.enqueueNDRangeKernel(kernel,
+    //                                   cl::NullRange,
+    //                                   cl::NDRange(k),
+    //                                   cl::NDRange(8));
     // ret |= queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(k),
     //                                   cl::NullRange);
+    // ret |= queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(k),
+    // cl::NDRange(warpSize));
     ret |= queue.finish();
     recorder.Record(spdlog::fmt_lib::format("OpenCL {:02d}", i));
   }
@@ -191,6 +236,8 @@ int main() {
   for (int i = 0; i < 10; i++) {
     spdlog::info("{} {} {} {}", i, res0[i], res1[i], res2[i]);
   }
+
+  spdlog::debug("mins: {}, scales: {}", weight.mins[0], weight.scales[0]);
 
   recorder.Print();
   return 0;
