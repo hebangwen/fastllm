@@ -189,7 +189,7 @@ int main(int argc, char *argv[]) {
   fastllm::Data weight{fastllm::INT4_NOZERO, {k, m}};
   weight.Allocate();
   weight.RandomizeData();
-  // weight.Allocate((uint8_t)1);
+  weight.Allocate((uint8_t)1);
   fastllm::Data bias{fastllm::FLOAT32, {k}};
   bias.Allocate(0.0f);
 
@@ -250,7 +250,8 @@ int main(int argc, char *argv[]) {
       device, new cl_context_properties[]{
                   CL_CONTEXT_PLATFORM, (cl_context_properties)platform(), 0}};
   std::string compileOptions{COMPILE_OPTIONS};
-  compileOptions += fmt::format(" -DLOCAL_SIZE={}", warpSize);
+  int gemvConvLocalSize = 16;
+  compileOptions += fmt::format(" -DLOCAL_SIZE={}", gemvConvLocalSize);
   cl::Program program =
       buildProgram(context, device, {kernelFilePath}, compileOptions);
   cl::CommandQueue queue{context, device};
@@ -435,7 +436,7 @@ int main(int argc, char *argv[]) {
     gemvConvKernel.setArg(idx++, k);
     gemvConvKernel.setArg(idx++, m);
 
-    std::vector<int> gws = {k >> 2, 1};
+    std::vector<int> gws = {k >> 2, gemvConvLocalSize};
     auto lws = FindKernelWorkgroupSize(gemvConvKernel, device, queue, gws);
     spdlog::info("gemvConv kernel: {}", lws);
 

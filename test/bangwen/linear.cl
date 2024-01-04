@@ -199,34 +199,48 @@ __kernel void GemvConv1x1Impl(
   const int k, const int m
 ) {
   int gid0 = get_global_id(0);
+  int gid1 = get_global_id(1);
+  int gsz1 = get_global_size(1);
 
   // [k, m] => [k//4, 4, m]
   int weight_width = m >> 1;
-  int weight_offset = gid0 * 4 * weight_width;
+  int weight_offset = gid0 * 4 * weight_width + gid1;
   int output_offset = gid0 << 2;
   float4 scale4 = vload4(0, scales + output_offset);
   float4 min4 = vload4(0, mins + output_offset);
   float4 minv = min4 / scale4;
 
   float2 in0;
-  float4 out0 = vload4(0, bias + output_offset);
   uint4 w0;
+  __local float4 out0[LOCAL_SIZE];
+  out0[gid1] = vload4(0, bias + output_offset);
 
-  for (int i = 0; i < weight_width; i++) {
+  for (int i = gid1; i < weight_width; i += gsz1) {
     w0.s0 = weight[weight_offset];
     w0.s1 = weight[weight_offset + weight_width];
     w0.s2 = weight[weight_offset + m];
     w0.s3 = weight[weight_offset + m + weight_width];
     in0 = vload2(0, input + (i << 1));
 
-    out0 = mad((float4) in0.s0, convert_float4(w0 >> 4) + minv, out0);
-    out0 = mad((float4) in0.s1, convert_float4(w0 & 15) + minv, out0);
+    out0[gid1] = mad((float4) in0.s0, convert_float4(w0 >> 4) + minv, out0[gid1]);
+    out0[gid1] = mad((float4) in0.s1, convert_float4(w0 & 15) + minv, out0[gid1]);
 
-    weight_offset++;
+    weight_offset += LOCAL_SIZE;
   }  
 
-  out0 *= scale4;
-  vstore4(out0, 0, output + output_offset);
+  // if (gid1 < 64) {
+    // if (gid1 < 32) out0[gid1] += out0[gid1 + 32];
+    // if (gid1 < 16) out0[gid1] += out0[gid1 + 16];
+    if (gid1 < 8) out0[gid1] += out0[gid1 + 8];
+    if (gid1 < 4) out0[gid1] += out0[gid1 + 4];
+    if (gid1 < 2) out0[gid1] += out0[gid1 + 2];
+    if (gid1 < 1) out0[gid1] += out0[gid1 + 1];
+  // }
+  
+  if (gid1 == 0) {
+    out0[0] *= scale4;
+    vstore4(out0[0], 0, output + output_offset);
+  }
 }
 
 
