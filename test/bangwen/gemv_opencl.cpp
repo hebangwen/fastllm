@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <initializer_list>
+#include <vector>
 #define CL_TARGET_OPENCL_VERSION 300
 #define CL_HPP_TARGET_OPENCL_VERSION 300
 
@@ -112,19 +113,27 @@ uint64_t GetKernelMaxWorkGroupSize(cl::Kernel &kernel, cl::Device &device) {
   return size;
 }
 
-std::vector<uint32_t> FindKernelWorkgroupSize(cl::Kernel &kernel, cl::Device &device,
-                             cl::CommandQueue &queue,
-                             const std::vector<int> &gws) {
+std::vector<uint32_t> FindKernelWorkgroupSize(cl::Kernel &kernel,
+                                              cl::Device &device,
+                                              cl::CommandQueue &queue,
+                                              const std::vector<int> &gws) {
   const uint32_t kwg_size =
       static_cast<uint32_t>(GetKernelMaxWorkGroupSize(kernel, device));
   std::vector<std::vector<uint32_t>> results;
-  std::vector<std::vector<uint32_t>> candidates = {
-      {kwg_size / 2, 2, 0},     {kwg_size / 4, 4, 0},
-      {kwg_size / 8, 8, 0},     {kwg_size / 16, 16, 0},
-      {kwg_size / 32, 32, 0},   {kwg_size / 64, 64, 0},
-      {kwg_size / 128, 128, 0}, {kwg_size / 256, 256, 0},
-      {kwg_size, 1, 0},         {1, kwg_size, 0},
-      {4, 4, 0}, {16, 4, 0}, {4, 16, 0}, {16, 16, 0}};
+  std::vector<std::vector<uint32_t>> candidates = {{kwg_size / 2, 2, 0},
+                                                   {kwg_size / 4, 4, 0},
+                                                   {kwg_size / 8, 8, 0},
+                                                   {kwg_size / 16, 16, 0},
+                                                   {kwg_size / 32, 32, 0},
+                                                   {kwg_size / 64, 64, 0},
+                                                   {kwg_size / 128, 128, 0},
+                                                   {kwg_size / 256, 256, 0},
+                                                   {kwg_size, 1, 0},
+                                                   {1, kwg_size, 0},
+                                                   {4, 4, 0},
+                                                   {16, 4, 0},
+                                                   {4, 16, 0},
+                                                   {16, 16, 0}};
   for (auto &ele : candidates) {
     const uint32_t tmp = ele[0] * ele[1];
     if (0 < tmp && tmp <= kwg_size) {
@@ -147,13 +156,15 @@ std::vector<uint32_t> FindKernelWorkgroupSize(cl::Kernel &kernel, cl::Device &de
     auto start = std::chrono::system_clock::now();
     for (int j = 0; j < 10; j++) {
       queue.enqueueNDRangeKernel(kernel, cl::NullRange,
-                                cl::NDRange(gws[0], gws[1]),
-                                cl::NDRange(candidate[0], candidate[1]));
+                                 cl::NDRange(gws[0], gws[1]),
+                                 cl::NDRange(candidate[0], candidate[1]));
       queue.finish();
     }
     auto end = std::chrono::system_clock::now();
-    auto span = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    // spdlog::info("local_workgroup_size {}, time: {}ms", candidate, span.count() / 1000.0 / 10.0);
+    auto span =
+        std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    // spdlog::info("local_workgroup_size {}, time: {}ms", candidate,
+    // span.count() / 1000.0 / 10.0);
 
     if (i == 0 || span.count() < bestTime) {
       bestLWS = &candidate;
@@ -174,10 +185,11 @@ int main(int argc, char *argv[]) {
 
   fastllm::Data input{fastllm::FLOAT32, {1, m}};
   input.Allocate(0.5f);
+  input.RandomizeData();
   fastllm::Data weight{fastllm::INT4_NOZERO, {k, m}};
   weight.Allocate();
   weight.RandomizeData();
-  weight.Allocate((uint8_t)1);
+  // weight.Allocate((uint8_t)1);
   fastllm::Data bias{fastllm::FLOAT32, {k}};
   bias.Allocate(0.0f);
 
@@ -335,79 +347,113 @@ int main(int argc, char *argv[]) {
   fastllm::Data unquantWeightOCL(unquantWeight.dataType, unquantWeight.dims);
   unquantWeightOCL.Allocate(0.0f);
 
-  fastllm::Data convOutput(fastllm::FLOAT32, {1, k});
-  convOutput.Allocate();
+  // fastllm::Data convOutput(fastllm::FLOAT32, {1, k});
+  // convOutput.Allocate();
+  // {
+  //   cl::Kernel transKernel{program, "TransformUnquantWeight"};
+
+  //   cl::Buffer bufferWeightFloat{context, CL_MEM_READ_WRITE,
+  //                                unquantWeightOCL.GetBytes()};
+
+  //   idx = 0;
+  //   transKernel.setArg(idx++, bufferB);
+  //   transKernel.setArg(idx++, bufferWeightFloat);
+  //   transKernel.setArg(idx++, bufferScales);
+  //   transKernel.setArg(idx++, bufferMins);
+  //   transKernel.setArg(idx++, k);
+  //   transKernel.setArg(idx++, m);
+
+  //   auto transLWS = FindKernelWorkgroupSize(transKernel, device, queue, {k >>
+  //   2, m >> 1}); spdlog::info("transpose kernel: {}", transLWS);
+
+  //   for (int i = 0; i < benchmarkRounds; i++) {
+  //     recorder.Record();
+  //     ret |= queue.enqueueNDRangeKernel(transKernel, cl::NullRange,
+  //                                       cl::NDRange(k >> 2, m >> 1),
+  //                                       cl::NDRange(transLWS[0],
+  //                                       transLWS[1]));
+  //     ret |= queue.finish();
+  //     recorder.Record(fmt::format("Unquant {:02d}", i));
+  //   }
+  //   FASTLLM_CHECK_CL_SUCCESS(ret, "unquant kernel running error");
+
+  //   ret |= queue.enqueueReadBuffer(bufferWeightFloat, CL_TRUE, 0,
+  //                                  unquantWeightOCL.GetBytes(),
+  //                                  unquantWeightOCL.cpuData);
+  //   ret |= queue.finish();
+  //   FASTLLM_CHECK_CL_SUCCESS(ret, "unquant reading error");
+
+  //   // PrintOutputValues<float>({unquantWeight, unquantWeightOCL});
+  //   // unquantWeight.Print();
+  //   // unquantWeightOCL.Print();
+
+  //   cl::Kernel convKernel{program, "conv2d_1x1"};
+  //   idx = 0;
+  //   convKernel.setArg(idx++, bufferA);
+  //   convKernel.setArg(idx++, bufferWeightFloat);
+  //   convKernel.setArg(idx++, bufferC);
+  //   convKernel.setArg(idx++, bufferBias);
+  //   convKernel.setArg(idx++, m);
+  //   convKernel.setArg(idx++, 1);
+  //   convKernel.setArg(idx++, 1);
+  //   convKernel.setArg(idx++, k >> 2);
+  //   convKernel.setArg(idx++, 1);
+  //   convKernel.setArg(idx++, 1);
+  //   convKernel.setArg(idx++, m);
+  //   convKernel.setArg(idx++, 4);
+
+  //   auto convLWS = FindKernelWorkgroupSize(convKernel, device, queue, {k >>
+  //   2, 1}); spdlog::info("conv kernel: {}", convLWS); for (int i = 0; i <
+  //   benchmarkRounds; i++) {
+  //     recorder.Record();
+  //     ret |= queue.enqueueNDRangeKernel(convKernel, cl::NullRange,
+  //                                       cl::NDRange(k >> 2, 1),
+  //                                       cl::NDRange(convLWS[0], convLWS[1]));
+  //     ret |= queue.finish();
+  //     recorder.Record(fmt::format("Conv1x1 {:02d}", i));
+  //   }
+  //   FASTLLM_CHECK_CL_SUCCESS(ret, "conv1x1 kernel error");
+
+  //   ret |= queue.enqueueReadBuffer(bufferC, CL_TRUE, 0,
+  //   convOutput.GetBytes(),
+  //                                  convOutput.cpuData);
+  //   FASTLLM_CHECK_CL_SUCCESS(ret, "conv1x1 reading error");
+  // }
+
+  fastllm::Data gemvConvOut(fastllm::FLOAT32, {1, k});
+  gemvConvOut.Allocate();
   {
-    cl::Kernel transKernel{program, "TransformUnquantWeight"};
-
-    cl::Buffer bufferWeightFloat{context, CL_MEM_READ_WRITE,
-                                 unquantWeightOCL.GetBytes()};
+    cl::Kernel gemvConvKernel{program, "GemvConv1x1Impl"};
 
     idx = 0;
-    transKernel.setArg(idx++, bufferB);
-    transKernel.setArg(idx++, bufferWeightFloat);
-    transKernel.setArg(idx++, bufferScales);
-    transKernel.setArg(idx++, bufferMins);
-    transKernel.setArg(idx++, k);
-    transKernel.setArg(idx++, m);
+    gemvConvKernel.setArg(idx++, bufferA);
+    gemvConvKernel.setArg(idx++, bufferB);
+    gemvConvKernel.setArg(idx++, bufferC);
+    gemvConvKernel.setArg(idx++, bufferBias);
+    gemvConvKernel.setArg(idx++, bufferScales);
+    gemvConvKernel.setArg(idx++, bufferMins);
+    gemvConvKernel.setArg(idx++, k);
+    gemvConvKernel.setArg(idx++, m);
 
-    auto transLWS = FindKernelWorkgroupSize(transKernel, device, queue, {k >> 2, m >> 1});
-    spdlog::info("transpose kernel: {}", transLWS);
+    std::vector<int> gws = {k >> 2, 1};
+    auto lws = FindKernelWorkgroupSize(gemvConvKernel, device, queue, gws);
+    spdlog::info("gemvConv kernel: {}", lws);
 
     for (int i = 0; i < benchmarkRounds; i++) {
       recorder.Record();
-      ret |= queue.enqueueNDRangeKernel(transKernel, cl::NullRange,
-                                        cl::NDRange(k >> 2, m >> 1),
-                                        cl::NDRange(transLWS[0], transLWS[1]));
-      ret |= queue.finish();
-      recorder.Record(fmt::format("Unquant {:02d}", i));
+      queue.enqueueNDRangeKernel(gemvConvKernel, cl::NullRange,
+                                 cl::NDRange(gws[0], gws[1]),
+                                 cl::NDRange(lws[0], lws[1]));
+      queue.finish();
+      recorder.Record(fmt::format("GemvConv {:02d}", i));
     }
-    FASTLLM_CHECK_CL_SUCCESS(ret, "unquant kernel running error");
 
-    ret |= queue.enqueueReadBuffer(bufferWeightFloat, CL_TRUE, 0,
-                                   unquantWeightOCL.GetBytes(),
-                                   unquantWeightOCL.cpuData);
-    ret |= queue.finish();
-    FASTLLM_CHECK_CL_SUCCESS(ret, "unquant reading error");
-
-    // PrintOutputValues<float>({unquantWeight, unquantWeightOCL});
-    // unquantWeight.Print();
-    // unquantWeightOCL.Print();
-
-    cl::Kernel convKernel{program, "conv2d_1x1"};
-    idx = 0;
-    convKernel.setArg(idx++, bufferA);
-    convKernel.setArg(idx++, bufferWeightFloat);
-    convKernel.setArg(idx++, bufferC);
-    convKernel.setArg(idx++, bufferBias);
-    convKernel.setArg(idx++, m);
-    convKernel.setArg(idx++, 1);
-    convKernel.setArg(idx++, 1);
-    convKernel.setArg(idx++, k >> 2);
-    convKernel.setArg(idx++, 1);
-    convKernel.setArg(idx++, 1);
-    convKernel.setArg(idx++, m);
-    convKernel.setArg(idx++, 4);
-
-    auto convLWS = FindKernelWorkgroupSize(convKernel, device, queue, {k >> 2, 1});
-    spdlog::info("conv kernel: {}", convLWS);
-    for (int i = 0; i < benchmarkRounds; i++) {
-      recorder.Record();
-      ret |= queue.enqueueNDRangeKernel(convKernel, cl::NullRange,
-                                        cl::NDRange(k >> 2, 1),
-                                        cl::NDRange(convLWS[0], convLWS[1]));
-      ret |= queue.finish();
-      recorder.Record(fmt::format("Conv1x1 {:02d}", i));
-    }
-    FASTLLM_CHECK_CL_SUCCESS(ret, "conv1x1 kernel error");
-
-    ret |= queue.enqueueReadBuffer(bufferC, CL_TRUE, 0, convOutput.GetBytes(),
-                                   convOutput.cpuData);
-    FASTLLM_CHECK_CL_SUCCESS(ret, "conv1x1 reading error");
+    queue.enqueueReadBuffer(bufferC, CL_TRUE, 0, gemvConvOut.GetBytes(),
+                            gemvConvOut.cpuData);
   }
 
   // convOutput.Print();
-  // PrintOutputValues<float>({result, result1, result2, convOutput});
+  PrintOutputValues<float>({result, result1, result2, gemvConvOut});
   spdlog::debug("mins: {}, scales: {}", weight.mins[0], weight.scales[0]);
 
   recorder.Print();
