@@ -128,6 +128,69 @@ __kernel void GemvFloatInt4NoZero4(__global float *A, __global uchar *B,
   }
 }
 
+// (int4) [k, m] -> (float) [k//4, m, 4]
+__kernel void TransformUnquantWeight(__global uchar *weight, __global float *output,
+                                     __global float *scales, __global float *mins, 
+                                     const int k, const int m) {
+  int gid0 = get_global_id(0);  // k>>2
+  int gid1 = get_global_id(1);  // m>>1
+
+  int input_channel = k >> 2;
+  int input_height = 4, input_width = m >> 1;
+  int output_height = m, output_width = 4;
+
+  int input_offset = gid0 * input_height * input_width + gid1;
+  int input_stride = input_width;
+  int quant_value_idx = gid0 << 2;
+  int output_offset = gid0 * output_height * output_width + (gid1 << 3);  // 每个线程计算 8 个结果, 所以左移 3 位
+
+  uint4 data;
+  data.s0 = weight[input_offset];
+  data.s1 = weight[input_offset + input_stride];
+  data.s2 = weight[input_offset + input_stride * 2];
+  data.s3 = weight[input_offset + input_stride * 3];
+
+  float4 scale4 = vload4(0, scales + quant_value_idx);
+  float4 min4 = vload4(0, mins + quant_value_idx);
+  float4 value = convert_float4(data >> 4) * scale4 + min4;
+  vstore4(value, 0, output + output_offset);
+  value = convert_float4(data & 15) * scale4 + min4;
+  vstore4(value, 0, output + output_offset + 4);
+
+}
+
+// gemv 的 conv 1x1 实现
+// conv_1x1: [1, m, 1, 1] (c) [k//4, m, 4, 1, 1] => [k//4, 4] => [k]
+__kernel void conv2d_1x1(__global float *input, __global float *weight, 
+                         __global float *output, __global float *bias, 
+                         const int ic, const int ih, const int iw,
+                         const int oc, const int oh, const int ow,
+                         const int fh, const int fw) {
+  int gid0 = get_global_id(0);    // k//4 (oc)
+  int weight_offset = gid0 * fh * fw;
+
+  float4 w0, w1, w2, w3;
+  float4 in0, out0 = vload4(0, bias + (gid0 << 2));
+
+  for (int i = 0; i < ic; i += 4) {
+    in0 = vload4(0, input + i);
+
+    w0 = vload4(0, weight + weight_offset);
+    w1 = vload4(0, weight + weight_offset + 4);
+    w2 = vload4(0, weight + weight_offset + 8);
+    w3 = vload4(0, weight + weight_offset + 12);
+    
+    out0 = mad((float4) in0.s0, w0, out0);
+    out0 = mad((float4) in0.s1, w1, out0);
+    out0 = mad((float4) in0.s2, w2, out0);
+    out0 = mad((float4) in0.s3, w3, out0);
+
+    weight_offset += 16;
+  }
+
+  int output_offset = gid0 << 2;
+  vstore4(out0, 0, output + output_offset);
+}
 
 
 __kernel void GemvFloatInt4NoZero2(__global float *A, __global uchar *B,
