@@ -9,7 +9,9 @@
 
 #include "executor.h"
 
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <cfloat>
@@ -18,8 +20,8 @@
 #include <thread>
 #include <algorithm>
 
-#ifdef USE_MMAP
 #include <sys/mman.h>
+#ifdef USE_MMAP
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -48,6 +50,40 @@ namespace fastllm {
     static ThreadPool *fastllmThreadPool = new ThreadPool(threads);
     static bool lowMemMode = false;
     static bool kvCacheInCPU = false;
+
+    inline void Memalign(void **memptr, size_t alignment, size_t size) {
+#ifdef _WIN32
+    *memptr = _aligned_malloc(size, alignment);
+#else
+#if defined(__ANDROID__) || defined(__hexagon__)
+    *memptr = memalign(alignment, size);
+#else
+    int ret = posix_memalign(memptr, alignment, size);
+    if (ret != 0) {
+        if (*memptr != nullptr) {
+            free(*memptr);
+            *memptr = nullptr;
+        }
+    }
+#endif
+#endif
+    }
+
+    void AdviseFree(void *addr, size_t length) {
+        int page_size = sysconf(_SC_PAGESIZE);
+        void *addr_aligned =
+            reinterpret_cast<void *>(
+                (reinterpret_cast<uintptr_t>(addr) + page_size - 1)
+                    & (~(page_size - 1)));
+        uintptr_t delta =
+            reinterpret_cast<uintptr_t>(addr_aligned)
+                - reinterpret_cast<uintptr_t>(addr);
+        if (length >= delta + page_size) {
+            size_t len_aligned = (length - delta) & (~(page_size - 1));
+            int error = madvise(addr_aligned, len_aligned, MADV_DONTNEED);
+        }
+    }
+
 
     void PrintInstructionInfo() {
         std::string avx = "OFF", avx2 = "OFF", aarch64 = "OFF", neonFp16 = "OFF", neonDot = "OFF";
@@ -376,8 +412,17 @@ namespace fastllm {
     void Data::MallocSpace(uint64_t size) {
         this->expansionSize = size;
         this->expansionBytes = (size * this->unitSize - 1) / this->unitSizeDiv + 1;
+        int padding = this->unitSize * 8;
         if (this->dataDevice == DataDevice::CPU) {
             this->cpuData = new uint8_t[this->expansionBytes];
+            // this->cpuDataMalloced = new uint8_t[this->expansionBytes + padding];
+            // if (this->unitSize == 1) {
+            //     this->cpuData = this->cpuDataMalloced;
+            // } else if (this->unitSize == 2) {
+            //     this->cpuData = this->cpuDataMalloced + (uint64_t) this->cpuDataMalloced % 16;
+            // } else if (this->unitSize == 4) {
+            //     this->cpuData = this->cpuDataMalloced + (uint64_t) this->cpuDataMalloced % 32;
+            // }
         } else if (this->dataDevice == DataDevice::CUDA) {
 #ifdef USE_CUDA
             if (this->directMemory) {
@@ -396,6 +441,7 @@ namespace fastllm {
         this->expansionBytes = 0;
         if (this->dataDevice == DataDevice::CPU) {
             delete[] this->cpuData;
+            // delete[] this->cpuDataMalloced;
         } else if (this->dataDevice == DataDevice::CUDA) {
 #ifdef USE_CUDA
             if (this->directMemory) {
@@ -430,6 +476,34 @@ namespace fastllm {
             }
         } else {
             // TODO: 别的设备上的初始化
+        }
+    }
+
+    void Data::Allocate(uint8_t v) {
+        AssertInFastLLM(this->dataType == DataType::INT32PARAM
+                        || this->dataType == DataType::INT16
+                        || this->dataType == INT8 || this->dataType == INT4
+                        || this->dataType == INT4_NOZERO, "Allocate error: datatype should be int32, int16, int8 or int4");
+
+        this->Allocate();
+        if (this->dataDevice == CPU) {
+            if (this->dataType == INT32PARAM) {
+                int val = v;
+                int* i = (int*) cpuData;
+                std::fill(i, i + Count(0), val);
+            } else if (this->dataType == INT16) {
+                uint16_t val = v;
+                uint16_t* u16 = (uint16_t*) cpuData;
+                std::fill(u16, u16 + Count(0), val);
+            } else if (this->dataType == INT8) {
+                uint8_t* u8 = cpuData;
+                std::fill(u8, u8 + Count(0), v);
+            } else if (this->dataType == INT4 || this->dataType == INT4_NOZERO) {
+                uint8_t* u8 = this->cpuData;
+                uint8_t val = (v << 4) + v;
+                std::cout << "filling value: " << (int) v << ", " << (int) val << ", bytes: " << this->expansionBytes << std::endl;
+                std::fill(u8, u8 + this->expansionBytes, val);
+            }
         }
     }
 
@@ -506,6 +580,7 @@ namespace fastllm {
     Data::~Data() {
 #ifndef USE_MMAP
         delete[] this->cpuData;
+        // delete[] this->cpuDataMalloced;
 #endif
 #ifdef USE_CUDA
         if (this->cudaData != nullptr) {
@@ -555,7 +630,22 @@ namespace fastllm {
         printf("\n");
          */
         int n = Count(0) / dims.back(), m = dims.back();
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < std::min(n, 10); i++) {
+            for (int j = 0; j < 10 && j < m; j++) {
+                printf("%f ", ((float*)cpuData)[i * m + j]);
+            }
+            if (m > 10) {
+                printf("... ");
+                for (int j = 0; j < 10 && j < m; j++) {
+                    printf("%f ", ((float *) cpuData)[i * m + (m - 10 + j)]);
+                }
+            }
+            printf("\n");
+        }
+        if (n > 20) {
+            printf("...\n");
+        }
+        for (int i = std::max(n - 10, 10); i < n; i++) {
             for (int j = 0; j < 10 && j < m; j++) {
                 printf("%f ", ((float*)cpuData)[i * m + j]);
             }
@@ -706,6 +796,8 @@ namespace fastllm {
                     delete[] cpuData;
 #else
                     delete[] this->cpuData;
+                    // delete[] this->cpuDataMalloced;
+                    this->cpuDataMalloced = nullptr;
                     this->cpuData = nullptr;
 #endif
                 }
@@ -747,7 +839,7 @@ namespace fastllm {
                 cpuData[i] = distribution(gen);
             }
 
-            std::normal_distribution<float> gauss(0.0, 1.0);
+            std::normal_distribution<float> gauss(-1.0, 0.0);
 
             int k = dims[0];
             perChannelAxis = 0;
@@ -756,14 +848,15 @@ namespace fastllm {
             mins.resize(k);
             zeros.resize(k);
             for (int i = 0; i < k; i++) {
-                scales[i] = gauss(gen);
                 mins[i] = gauss(gen);
-                zeros[i] = gauss(gen);
                 if (dataType == INT8 || dataType == INT4) {
                     perChannelsConfigs[i] = LowBitConfig(mins[i], 1.0, (dataType == INT8 ? 8 : 4), 0);
                 } else if (dataType == INT4_NOZERO) {
                     perChannelsConfigs[i] = LowBitConfig(mins[i], 1.0, 4, 1);
                 }
+                scales[i] = perChannelsConfigs[i].scale;
+                zeros[i] = perChannelsConfigs[i].zeroPoint;
+                mins[i] = perChannelsConfigs[i].min;
             }
         } else if (dataType == FLOAT32) {
             std::uniform_real_distribution<float> distribution{};

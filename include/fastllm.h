@@ -230,6 +230,7 @@ namespace fastllm {
         uint64_t expansionBytes = 0; // 扩容后的字节数
         std::vector <int> expansionDims; // 预扩容的形状
         uint8_t *cpuData = nullptr; // 数据指针
+        uint8_t *cpuDataMalloced = nullptr;  // 为保证内存对齐，原始分配的内存
 
 	    void *cudaData = nullptr;
         std::vector <void*> extraCudaData;
@@ -274,6 +275,8 @@ namespace fastllm {
         void Allocate(); // 分配内存
 
         void Allocate(float v); // 分配内存并初始化
+
+        void Allocate(uint8_t v); // 分配 uint8 并初始化
 
         void Expansion(const std::vector <int> &dims); // 预扩容到相应尺寸
 
