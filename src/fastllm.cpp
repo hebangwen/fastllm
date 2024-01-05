@@ -831,8 +831,8 @@ namespace fastllm {
     }
 
     void Data::RandomizeData() {
-        std::mt19937 gen(42);
         if (dataType == INT8 || dataType == INT4 || dataType == INT4_NOZERO || dataType == INT16 || dataType == INT2 || dataType == INT32PARAM) {
+            std::mt19937 gen(42);
             auto len = GetBytes();
             std::uniform_int_distribution<int8_t> distribution(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max());
             for (uint64_t i = 0; i < len; i++) {
@@ -859,6 +859,7 @@ namespace fastllm {
                 mins[i] = perChannelsConfigs[i].min;
             }
         } else if (dataType == FLOAT32) {
+            std::mt19937 gen(std::random_device{}());
             std::uniform_real_distribution<float> distribution{};
             auto size = Count(0);
             auto* ptr = (float*) cpuData;
@@ -866,6 +867,7 @@ namespace fastllm {
                 ptr[i] = distribution(gen);
             }
         } else if (dataType == FLOAT16) {
+            std::mt19937 gen(std::random_device{}());
             std::uniform_real_distribution<float> distribution{};
             auto size = Count(0);
             auto* ptr = (uint16_t*) cpuData;
