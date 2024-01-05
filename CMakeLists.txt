@@ -34,6 +34,7 @@ set(FASTLLM_CXX_SOURCES src/fastllm.cpp src/device.cpp src/model.cpp src/executo
         src/models/chatglm.cpp src/models/moss.cpp src/models/llama.cpp src/models/qwen.cpp src/models/basellm.cpp src/models/glm.cpp)
 
 add_subdirectory(third_party/spdlog)
+add_subdirectory(third_party/libopencl-stub)
 set(FASTLLM_LINKED_LIBS ${FASTLLM_LINKED_LIBS} spdlog::spdlog)
 include_directories(include)
 include_directories(include/utils)
@@ -72,7 +73,8 @@ if (PY_API)
     add_library(pyfastllm MODULE src/pybinding.cpp ${FASTLLM_CXX_SOURCES} ${FASTLLM_CXX_HEADERS} ${FASTLLM_CUDA_SOURCES})
     target_link_libraries(pyfastllm PUBLIC pybind11::module ${FASTLLM_LINKED_LIBS})
     pybind11_extension(pyfastllm)
-else()
+endif()
+
 add_library(fastllm OBJECT
             ${FASTLLM_CXX_SOURCES}
             ${FASTLLM_CUDA_SOURCES}
@@ -132,4 +134,3 @@ add_subdirectory(test/bangwen)
 #     )
 # endif()
 
-endif()
