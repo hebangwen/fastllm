@@ -5,6 +5,7 @@
 #ifndef TEST_FASTLLM_H
 #define TEST_FASTLLM_H
 
+#include <CL/opencl.hpp>
 #include <vector>
 #include <cstdint>
 #include <string>
@@ -18,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include "devices/cpu/cputhreadpool.h"
+#include "devices/opencl/opencl_allocator.h"
 
 #ifdef USE_SENTENCEPIECE
 #include <sentencepiece_processor.h>
@@ -175,7 +177,7 @@ namespace fastllm {
     };
 
     enum DataDevice {
-        CPU = 0, CUDA = 1
+        CPU = 0, CUDA = 1, OPENCL = 2
     };
 
     enum WeightType {
@@ -230,13 +232,16 @@ namespace fastllm {
         uint64_t expansionBytes = 0; // 扩容后的字节数
         std::vector <int> expansionDims; // 预扩容的形状
         uint8_t *cpuData = nullptr; // 数据指针
-        uint8_t *cpuDataMalloced = nullptr;  // 为保证内存对齐，原始分配的内存
 
 	    void *cudaData = nullptr;
         std::vector <void*> extraCudaData;
 
         void *deviceData = nullptr;
         std::vector <void*> extraDeviceData;
+
+        // TODO(hebangwen): 使用
+        cl::Buffer *openclData_ = nullptr;  // OpenCL Buffer 内存
+        OpenCLAllocator *oclAllocator = OpenCLAllocator::GetGlobalOpenCLAllocator();
 
         DataDevice dataDevice = DataDevice::CPU;
         std::vector <int> dataDeviceIds;

@@ -415,14 +415,6 @@ namespace fastllm {
         int padding = this->unitSize * 8;
         if (this->dataDevice == DataDevice::CPU) {
             this->cpuData = new uint8_t[this->expansionBytes];
-            // this->cpuDataMalloced = new uint8_t[this->expansionBytes + padding];
-            // if (this->unitSize == 1) {
-            //     this->cpuData = this->cpuDataMalloced;
-            // } else if (this->unitSize == 2) {
-            //     this->cpuData = this->cpuDataMalloced + (uint64_t) this->cpuDataMalloced % 16;
-            // } else if (this->unitSize == 4) {
-            //     this->cpuData = this->cpuDataMalloced + (uint64_t) this->cpuDataMalloced % 32;
-            // }
         } else if (this->dataDevice == DataDevice::CUDA) {
 #ifdef USE_CUDA
             if (this->directMemory) {
@@ -441,7 +433,6 @@ namespace fastllm {
         this->expansionBytes = 0;
         if (this->dataDevice == DataDevice::CPU) {
             delete[] this->cpuData;
-            // delete[] this->cpuDataMalloced;
         } else if (this->dataDevice == DataDevice::CUDA) {
 #ifdef USE_CUDA
             if (this->directMemory) {
@@ -580,7 +571,6 @@ namespace fastllm {
     Data::~Data() {
 #ifndef USE_MMAP
         delete[] this->cpuData;
-        // delete[] this->cpuDataMalloced;
 #endif
 #ifdef USE_CUDA
         if (this->cudaData != nullptr) {
@@ -796,8 +786,6 @@ namespace fastllm {
                     delete[] cpuData;
 #else
                     delete[] this->cpuData;
-                    // delete[] this->cpuDataMalloced;
-                    this->cpuDataMalloced = nullptr;
                     this->cpuData = nullptr;
 #endif
                 }
