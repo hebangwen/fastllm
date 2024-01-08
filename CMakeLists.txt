@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.5)
 project(fastllm LANGUAGES CXX)
 
 option(USE_CUDA "use cuda" OFF)
+option(USE_OPENCL "use opencl" OFF)
 
 option(PY_API "python api" OFF)
 option(USE_MMAP "use mmap" OFF)
@@ -10,6 +11,7 @@ option(USE_MMAP "use mmap" OFF)
 option(USE_SENTENCEPIECE "use sentencepiece" OFF)
 
 message(STATUS "USE_CUDA: ${USE_CUDA}")
+message(STATUS "USE_OPENCL: ${USE_OPENCL}")
 
 message(STATUS "PYTHON_API: ${PY_API}")
 
@@ -34,7 +36,6 @@ set(FASTLLM_CXX_SOURCES src/fastllm.cpp src/device.cpp src/model.cpp src/executo
         src/models/chatglm.cpp src/models/moss.cpp src/models/llama.cpp src/models/qwen.cpp src/models/basellm.cpp src/models/glm.cpp)
 
 add_subdirectory(third_party/spdlog)
-add_subdirectory(third_party/libopencl-stub)
 set(FASTLLM_LINKED_LIBS ${FASTLLM_LINKED_LIBS} spdlog::spdlog)
 include_directories(include)
 include_directories(include/utils)
@@ -60,6 +61,18 @@ if (USE_CUDA)
     set(CMAKE_CUDA_ARCHITECTURES "native")
 endif()
 
+if (USE_OPENCL)
+    add_compile_definitions(USE_OPENCL)
+    add_definitions(-DCL_HPP_TARGET_OPENCL_VERSION=300)
+    add_definitions(-DCL_TARGET_OPENCL_VERSION=300)
+    add_subdirectory(third_party/libopencl-stub)
+    set(FASTLLM_OPENCL_SOURCES src/devices/opencl/opencl_allocator.cpp src/devices/opencl/opencl_runtime.cpp 
+                               src/devices/opencl/cl/opencl_program.cpp
+                               src/devices/opencl/opencldevice.cpp)
+    set(FASTLLM_LINKED_LIBS ${FASTLLM_LINKED_LIBS} OpenCL)
+endif()
+
+
 if (PY_API)
     set(PYBIND third_party/pybind11)
     add_subdirectory(${PYBIND})
@@ -78,6 +91,7 @@ endif()
 add_library(fastllm OBJECT
             ${FASTLLM_CXX_SOURCES}
             ${FASTLLM_CUDA_SOURCES}
+            ${FASTLLM_OPENCL_SOURCES}
             )
 target_link_libraries(fastllm PUBLIC ${FASTLLM_LINKED_LIBS})
 

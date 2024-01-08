@@ -1,9 +1,16 @@
 
 // [1, m] * [k//4, 4, m] => [1, k]
 __kernel void GemvConv1x1Impl(
-  __global float *input, __global uchar *weight, __global float *output,
-  __global float *bias, __global float *scales, __global float *mins,
-  const int k, const int m
+  __global float *input, 
+  __global uchar *weight, 
+  __global float *output,
+#ifdef HAS_BIAS
+  __global float *bias, 
+#endif
+  __global float *scales, 
+  __global float *mins,
+  const int k, 
+  const int m
 ) {
   int gid0 = get_global_id(0);
 
@@ -16,7 +23,11 @@ __kernel void GemvConv1x1Impl(
   float4 minv = min4 / scale4;
 
   float2 in0;
+#ifdef HAS_BIAS
   float4 out0 = vload4(0, bias + output_offset);
+#else
+  float4 out0 = 0;
+#endif
   uint4 w0;
 
   for (int i = 0; i < weight_width; i++) {

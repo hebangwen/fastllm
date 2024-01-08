@@ -425,6 +425,12 @@ namespace fastllm {
 #else
             ErrorInFastLLM("Error: cuda is not supported.\n");
 #endif
+        } else if (this->dataDevice == DataDevice::OPENCL) {
+            if (this->openclData_ != nullptr) {
+                oclAllocator->Delete(openclData_);
+            }
+
+            oclAllocator->New(size, (void**) &openclData_);
         }
     }
 
@@ -442,6 +448,12 @@ namespace fastllm {
             }
 #else
             ErrorInFastLLM("Error: cuda is not supported.\n");
+#endif
+        } else if (this->dataDevice == DataDevice::OPENCL) {
+#ifdef USE_OPENCL
+            if (this->openclData_ != nullptr) {
+                oclAllocator->Delete(this->openclData_);
+            }
 #endif
         }
     }
@@ -534,13 +546,14 @@ namespace fastllm {
         }
         this->expansionDims = dims;
         if (this->expansionBytes != 0) {
-            if (this->dataDevice == DataDevice::CPU) {
-                uint8_t *old = this->cpuData;
-                MallocSpace(this->strides[0] * std::max(this->dims[0], dims[0]));
                 int outer = this->Count(0) / this->Count(axis);
                 int input0Stride = this->Count(axis);
                 int inner = this->strides[axis];
                 int unitSize = this->unitSize;
+                auto expandedSize = this->strides[0] * std::max(this->dims[0], dims[0]);
+            if (this->dataDevice == DataDevice::CPU) {
+                uint8_t *old = this->cpuData;
+                MallocSpace(expandedSize);
                 for (int o = 0; o < outer; o++) {
                     memcpy(this->cpuData + o * input0Stride * unitSize,
                            old + o * input1Stride * unitSize,
@@ -550,17 +563,33 @@ namespace fastllm {
             } else if (this->dataDevice == DataDevice::CUDA) {
 #ifdef USE_CUDA
                 uint8_t *old = (uint8_t*)this->cudaData;
-                MallocSpace(this->strides[0] * std::max(this->dims[0], dims[0]));
-                int outer = this->Count(0) / this->Count(axis);
-                int input0Stride = this->Count(axis);
-                int inner = this->strides[axis];
-                int unitSize = this->unitSize;
+                MallocSpace(expandedSize);
                 FastllmCudaMemcpy2DDeviceToDevice((uint8_t*)this->cudaData, input0Stride * unitSize,
                                             (uint8_t*)old, input1Stride * unitSize, this->dims[axis] * inner * unitSize, outer);
                 FastllmCudaFree(old);
                 FastllmCudaClearBigBuffer();
 #else
                 ErrorInFastLLM("Error: cuda is not supported.\n");
+#endif
+            } else if (this->dataDevice == DataDevice::OPENCL) {
+#ifdef USE_OPENCL
+                cl::Buffer *oldBuffer = this->openclData_;
+                oclAllocator->New(expandedSize, (void**) &openclData_);
+
+                uint8_t *oldBufferMapped = (uint8_t*) oclAllocator->Map(oldBuffer, 0, oldBytes, true);
+                uint8_t *newBufferMapped = (uint8_t*) oclAllocator->Map(openclData_, 0, GetBytes(), true);
+
+                for (int o = 0; o < outer; o++) {
+                    memcpy(newBufferMapped + o * input0Stride * unitSize,
+                           oldBufferMapped + o * input1Stride * unitSize,
+                           this->dims[axis] * inner * unitSize);
+                }
+                
+                oclAllocator->Unmap(oldBuffer, oldBufferMapped);
+                oclAllocator->Unmap(openclData_, newBufferMapped);
+                oclAllocator->Delete(oldBuffer);
+#else
+                ErrorInFastLLM("Error: opencl is not supported.\n");
 #endif
             }
         } else {
@@ -580,6 +609,12 @@ namespace fastllm {
             } else {
                 FastllmCudaFree(this->cudaData);
             }*/
+        }
+#endif
+
+#ifdef USE_OPENCL
+        if (openclData_ != nullptr) {
+            oclAllocator->Delete(openclData_);
         }
 #endif
     }
@@ -741,6 +776,8 @@ namespace fastllm {
         BaseDevice *dev = (BaseDevice*)device;
         if (dev->deviceType == "cuda") {
             this->ToDevice(DataDevice::CUDA, dev->deviceIds);
+        } else if (dev->deviceType == "opencl") {    
+            this->ToDevice(DataDevice::OPENCL, dev->deviceIds);
         } else {
             this->ToDevice(DataDevice::CPU, dev->deviceIds);
         }
@@ -749,6 +786,8 @@ namespace fastllm {
     void Data::ToDevice(fastllm::DataDevice device) {
         if (device == DataDevice::CUDA) {
             ToDevice(device, curExecutor->GetDeviceIds("cuda"));
+        } else if (device == DataDevice::OPENCL) {
+            ToDevice(device, curExecutor->GetDeviceIds("opencl"));
         } else {
             ToDevice(device, {0});
         }
@@ -771,8 +810,8 @@ namespace fastllm {
         }
 
         if (this->expansionBytes != 0) {
-#ifdef USE_CUDA
             if (this->dataDevice == DataDevice::CPU) {
+#ifdef USE_CUDA
                 if (device == DataDevice::CUDA) {
                     uint8_t *cpuData = this->cpuData;
 #ifdef USE_MMAP
@@ -788,8 +827,29 @@ namespace fastllm {
                     delete[] this->cpuData;
                     this->cpuData = nullptr;
 #endif
+#endif
+                } else if (device == DataDevice::OPENCL) {
+#ifdef USE_OPENCL
+                    // unmap opencl data into cpu, copy data in cpu and map back into opencl
+                    uint8_t *cpuData = this->cpuData;
+#ifdef USE_MMAP
+                    cpuData = new uint8_t[expansionBytes];
+                    memcpy(cpuData, this->cpuData, expansionBytes);
+#endif
+                    oclAllocator->New(expansionBytes, (void**) &openclData_);
+                    void *oclDataPtr = oclAllocator->Map(openclData_, 0, expansionBytes, true);
+                    std::memcpy(oclDataPtr, cpuData, expansionBytes);
+                    oclAllocator->Unmap(openclData_, oclDataPtr);
+#ifdef USE_MMAP
+                    delete[] cpuData;
+#else
+                    delete[] this->cpuData;
+                    this->cpuData = nullptr;
+#endif
+#endif
                 }
             } else if (this->dataDevice == DataDevice::CUDA) {
+#ifdef USE_CUDA
                 if (device == DataDevice::CPU) {
                     this->cpuData = new uint8_t[expansionBytes];
                     FastllmCudaCopyFromDeviceToHost(this->cpuData, this->cudaData, expansionBytes);
@@ -806,9 +866,25 @@ namespace fastllm {
                     FastllmCudaFree(this->cudaData);
                     this->cudaData = newCudaData;
                     FastllmCudaSetDevice(destDevice);
+                } else if (device == DataDevice::OPENCL) {
+                    ErrorInFastLLM("CUDA to OPENCL is not supported!");
                 }
-            }
 #endif
+            } else if (this->dataDevice == DataDevice::OPENCL) {
+#ifdef USE_OPENCL
+                if (device == DataDevice::CPU) {
+                    this->cpuData = new uint8_t[expansionBytes];
+                    void *oclDataPtr = oclAllocator->Map(this->openclData_, 0, expansionBytes, true);
+                    std::memcpy(this->cpuData, oclDataPtr, expansionBytes);
+                    oclAllocator->Unmap(this->openclData_, oclDataPtr);
+                    oclAllocator->Delete(this->openclData_);
+                } else if (device == DataDevice::OPENCL) {
+                    ErrorInFastLLM("OPENCL to OPENCL is not supported!");
+                } else {
+                    ErrorInFastLLM("OPENCL to CUDA is not supported!");
+                }
+#endif
+            }
         }
         if (deviceIds.size() == 0) {
             this->dataDeviceIds = {0};
@@ -1879,6 +1955,12 @@ namespace fastllm {
             if (w.second.cudaData != nullptr) {
                 FastllmCudaDirectFree(w.second.cudaData);
                 w.second.cudaData = nullptr;
+            }
+#endif
+#ifdef USE_OPENCL
+            if (w.second.openclData_ != nullptr) {
+                w.second.oclAllocator->Delete(w.second.openclData_);
+                w.second.openclData_ = nullptr;
             }
 #endif
         }

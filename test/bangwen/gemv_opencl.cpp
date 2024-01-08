@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <initializer_list>
 #include <vector>
-#define CL_TARGET_OPENCL_VERSION 300
-#define CL_HPP_TARGET_OPENCL_VERSION 300
+// #define CL_TARGET_OPENCL_VERSION 300
+// #define CL_HPP_TARGET_OPENCL_VERSION 300
 
 #include "spdlog/common.h"
 #include <CL/cl.h>
@@ -176,6 +176,7 @@ std::vector<uint32_t> FindKernelWorkgroupSize(cl::Kernel &kernel,
 }
 
 int main(int argc, char *argv[]) {
+  spdlog::debug("{}:{}", __FILE__, __LINE__);
   spdlog::set_level(spdlog::level::debug);
   std::string kernelFilePath = "linear.cl";
   int benchmarkRounds = 10;
@@ -183,6 +184,7 @@ int main(int argc, char *argv[]) {
     benchmarkRounds = std::stoi(argv[1]);
   int m = 4096, k = 4608;
 
+  spdlog::debug("{}:{}", __FILE__, __LINE__);
   fastllm::Data input{fastllm::FLOAT32, {1, m}};
   input.Allocate(0.5f);
   input.RandomizeData();
@@ -193,6 +195,7 @@ int main(int argc, char *argv[]) {
   fastllm::Data bias{fastllm::FLOAT32, {k}};
   bias.Allocate(0.0f);
 
+  spdlog::debug("{}:{}", __FILE__, __LINE__);
   fastllm::TimeRecord recorder;
 #ifdef USE_CUDA
   input.ToDevice(fastllm::CUDA);
@@ -301,23 +304,6 @@ int main(int argc, char *argv[]) {
   ret |= kernel.setArg(idx++, bufferMins);
   ret |= kernel.setArg(idx++, m);
   ret |= kernel.setArg(idx++, k);
-
-  // ret |= kernel.setArg(idx++, bufferB);
-  // ret |= kernel.setArg(idx++, bufferA);
-  // ret |= kernel.setArg(idx++, bufferC);
-  // ret |= kernel.setArg(idx++, k);
-  // ret |= kernel.setArg(idx++, m);
-  // ret |= kernel.setArg(idx++, bufferScales);
-  // ret |= kernel.setArg(idx++, bufferMins);
-
-  // ret |= kernel.setArg(idx++, bufferB);
-  // ret |= kernel.setArg(idx++, bufferA);
-  // ret |= kernel.setArg(idx++, bufferC);
-  // ret |= kernel.setArg(idx++, bufferBias);
-  // ret |= kernel.setArg(idx++, k);
-  // ret |= kernel.setArg(idx++, m);
-  // ret |= kernel.setArg(idx++, bufferScales);
-  // ret |= kernel.setArg(idx++, bufferMins);
   FASTLLM_CHECK_CL_SUCCESS(ret, "kernel set args");
 
   for (int i = 0; i < benchmarkRounds; i++) {
@@ -325,14 +311,6 @@ int main(int argc, char *argv[]) {
     ret |= queue.enqueueNDRangeKernel(kernel, cl::NullRange,
                                       cl::NDRange(k, warpSize),
                                       cl::NDRange(1, warpSize));
-    // ret |= queue.enqueueNDRangeKernel(kernel,
-    //                                   cl::NullRange,
-    //                                   cl::NDRange(k),
-    //                                   cl::NDRange(8));
-    // ret |= queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(k),
-    //                                   cl::NullRange);
-    // ret |= queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(k),
-    // cl::NDRange(warpSize));
     ret |= queue.finish();
     recorder.Record(spdlog::fmt_lib::format("OpenCL {:02d}", i));
   }
@@ -346,79 +324,6 @@ int main(int argc, char *argv[]) {
   ConvertInt4NoZeroToFloat(weight, unquantWeight);
   fastllm::Data unquantWeightOCL(unquantWeight.dataType, unquantWeight.dims);
   unquantWeightOCL.Allocate(0.0f);
-
-  // fastllm::Data convOutput(fastllm::FLOAT32, {1, k});
-  // convOutput.Allocate();
-  // {
-  //   cl::Kernel transKernel{program, "TransformUnquantWeight"};
-
-  //   cl::Buffer bufferWeightFloat{context, CL_MEM_READ_WRITE,
-  //                                unquantWeightOCL.GetBytes()};
-
-  //   idx = 0;
-  //   transKernel.setArg(idx++, bufferB);
-  //   transKernel.setArg(idx++, bufferWeightFloat);
-  //   transKernel.setArg(idx++, bufferScales);
-  //   transKernel.setArg(idx++, bufferMins);
-  //   transKernel.setArg(idx++, k);
-  //   transKernel.setArg(idx++, m);
-
-  //   auto transLWS = FindKernelWorkgroupSize(transKernel, device, queue, {k >>
-  //   2, m >> 1}); spdlog::info("transpose kernel: {}", transLWS);
-
-  //   for (int i = 0; i < benchmarkRounds; i++) {
-  //     recorder.Record();
-  //     ret |= queue.enqueueNDRangeKernel(transKernel, cl::NullRange,
-  //                                       cl::NDRange(k >> 2, m >> 1),
-  //                                       cl::NDRange(transLWS[0],
-  //                                       transLWS[1]));
-  //     ret |= queue.finish();
-  //     recorder.Record(fmt::format("Unquant {:02d}", i));
-  //   }
-  //   FASTLLM_CHECK_CL_SUCCESS(ret, "unquant kernel running error");
-
-  //   ret |= queue.enqueueReadBuffer(bufferWeightFloat, CL_TRUE, 0,
-  //                                  unquantWeightOCL.GetBytes(),
-  //                                  unquantWeightOCL.cpuData);
-  //   ret |= queue.finish();
-  //   FASTLLM_CHECK_CL_SUCCESS(ret, "unquant reading error");
-
-  //   // PrintOutputValues<float>({unquantWeight, unquantWeightOCL});
-  //   // unquantWeight.Print();
-  //   // unquantWeightOCL.Print();
-
-  //   cl::Kernel convKernel{program, "conv2d_1x1"};
-  //   idx = 0;
-  //   convKernel.setArg(idx++, bufferA);
-  //   convKernel.setArg(idx++, bufferWeightFloat);
-  //   convKernel.setArg(idx++, bufferC);
-  //   convKernel.setArg(idx++, bufferBias);
-  //   convKernel.setArg(idx++, m);
-  //   convKernel.setArg(idx++, 1);
-  //   convKernel.setArg(idx++, 1);
-  //   convKernel.setArg(idx++, k >> 2);
-  //   convKernel.setArg(idx++, 1);
-  //   convKernel.setArg(idx++, 1);
-  //   convKernel.setArg(idx++, m);
-  //   convKernel.setArg(idx++, 4);
-
-  //   auto convLWS = FindKernelWorkgroupSize(convKernel, device, queue, {k >>
-  //   2, 1}); spdlog::info("conv kernel: {}", convLWS); for (int i = 0; i <
-  //   benchmarkRounds; i++) {
-  //     recorder.Record();
-  //     ret |= queue.enqueueNDRangeKernel(convKernel, cl::NullRange,
-  //                                       cl::NDRange(k >> 2, 1),
-  //                                       cl::NDRange(convLWS[0], convLWS[1]));
-  //     ret |= queue.finish();
-  //     recorder.Record(fmt::format("Conv1x1 {:02d}", i));
-  //   }
-  //   FASTLLM_CHECK_CL_SUCCESS(ret, "conv1x1 kernel error");
-
-  //   ret |= queue.enqueueReadBuffer(bufferC, CL_TRUE, 0,
-  //   convOutput.GetBytes(),
-  //                                  convOutput.cpuData);
-  //   FASTLLM_CHECK_CL_SUCCESS(ret, "conv1x1 reading error");
-  // }
 
   fastllm::Data gemvConvOut(fastllm::FLOAT32, {1, k});
   gemvConvOut.Allocate();
@@ -452,8 +357,27 @@ int main(int argc, char *argv[]) {
                             gemvConvOut.cpuData);
   }
 
+#ifdef USE_OPENCL
+  fastllm::ApplyDeviceMap({{"opencl", 20}, {"cpu", 10}}, 0, 0);
+  input.ToDevice(fastllm::DataDevice::OPENCL);
+  weight.ToDevice(fastllm::DataDevice::OPENCL);
+  bias.ToDevice(fastllm::DataDevice::OPENCL);
+
+  fastllm::Data output(fastllm::FLOAT32, {1, k});
+  for (int i = 0; i < benchmarkRounds; i++) {
+    recorder.Record();
+    fastllm::Linear(input, weight, bias, output);
+    recorder.Record(spdlog::fmt_lib::format("OpenCLIntgrated {:02d}", i));
+  }
+
+  output.ToDevice(fastllm::DataDevice::CPU);
+#else
+  fastllm::Data output{fastllm::FLOAT32, {1, k}};
+  output.Allocate(0.5f);
+#endif
+
   // convOutput.Print();
-  PrintOutputValues<float>({result, result1, result2, gemvConvOut});
+  PrintOutputValues<float>({result, result1, result2, gemvConvOut, output});
   spdlog::debug("mins: {}, scales: {}", weight.mins[0], weight.scales[0]);
 
   recorder.Print();

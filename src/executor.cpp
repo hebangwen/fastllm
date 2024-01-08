@@ -2,6 +2,7 @@
 // Created by huangyuyang on 6/13/23.
 //
 
+#include "device.h"
 #include "utils.h"
 
 #include "executor.h"
@@ -13,11 +14,18 @@
 #include "devices/cuda/fastllm-cuda.cuh"
 #endif
 
+#ifdef USE_OPENCL
+#include "devices/opencl/opencldevice.h"
+#endif
+
 namespace fastllm {
     Executor::Executor() {
         this->devices.clear();
 #ifdef USE_CUDA
         this->devices.push_back((BaseDevice*) new CudaDevice());
+#endif
+#ifdef USE_OPENCL
+        this->devices.push_back((BaseDevice*) new OpenCLDevice());
 #endif
         this->devices.push_back((BaseDevice*) new CpuDevice());
     }

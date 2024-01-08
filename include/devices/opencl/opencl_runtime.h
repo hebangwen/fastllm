@@ -41,12 +41,11 @@ private:
   void BuildProgram(const std::string &programName,
                     const std::string &buildOptions, cl::Program *program);
 
-  void SetOpenCLPrograms();
+  std::vector<unsigned char> *GetOpenCLPrograms(const std::string &name);
 
   std::shared_ptr<cl::Device> device_;
   std::shared_ptr<cl::Context> context_;
   std::shared_ptr<cl::CommandQueue> queue_;
-  std::map<std::string, std::string> openCLProgrameMap_;
   std::map<std::string, cl::Program> builtPrograms_;
 
   std::string platformInfo_;

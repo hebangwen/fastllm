@@ -143,7 +143,7 @@ int main(int argc, char **argv) {
       auto dims = CalculatePartResult(cfg.k_, cfg.m_, cfg.partRatio_, PART_K);
       float timeMs = BenchmarkByPartRatio(config, cfg);
 
-      csvResult.push_back(spdlog::fmt_lib::format(
+      csvResult.push_back(fmt::format(
           "{},{},{},{},{},{},{}", dims[0], dims[1], cfg.weightType_,
           cfg.biasType_, cfg.hasBias_, cfg.partRatio_, timeMs));
 
