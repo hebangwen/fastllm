@@ -61,11 +61,11 @@ if (USE_CUDA)
     set(CMAKE_CUDA_ARCHITECTURES "native")
 endif()
 
+add_subdirectory(third_party/libopencl-stub)
 if (USE_OPENCL)
     add_compile_definitions(USE_OPENCL)
     add_definitions(-DCL_HPP_TARGET_OPENCL_VERSION=300)
     add_definitions(-DCL_TARGET_OPENCL_VERSION=300)
-    add_subdirectory(third_party/libopencl-stub)
     set(FASTLLM_OPENCL_SOURCES src/devices/opencl/opencl_allocator.cpp src/devices/opencl/opencl_runtime.cpp 
                                src/devices/opencl/cl/opencl_program.cpp
                                src/devices/opencl/opencldevice.cpp)

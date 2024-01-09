@@ -199,8 +199,15 @@ namespace fastllm {
                 pastKey.lockInCPU = true;
                 pastValue.lockInCPU = true;
             } else {
+#ifdef USE_CUDA
                 pastKey.ToDevice(DataDevice::CUDA);
                 pastValue.ToDevice(DataDevice::CUDA);
+#endif
+
+#ifdef USE_OPENCL
+                pastKey.ToDevice(DataDevice::OPENCL);
+                pastValue.ToDevice(DataDevice::OPENCL);
+#endif
             };
 
             // recorder.Record();

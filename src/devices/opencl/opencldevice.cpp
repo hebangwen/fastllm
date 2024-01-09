@@ -8,8 +8,6 @@
 #include <CL/opencl.hpp>
 #include <memory>
 
-#define OPENCL_BASE_BUILD_OPTIONS                                              \
-  "-cl-std=CL3.0 -cl-mad-enable -cl-fast-relaxed-math"
 
 namespace fastllm {
 void CopyBufferFromCPU(OpenCLAllocator *allocator, void *dst, void *src,
@@ -116,7 +114,13 @@ void FastllmOpenCLMatVecMulFloatInt4NoZero(cl::Kernel *kernel,
   kernel->setArg(idx++, m);
 
   std::vector<int> gws{k >> 2, 1};
+#ifdef __aarch64__
+  // arm GPU 不能使用非均匀划分的 workgroup
+  std::vector<int> lws{(int) runtime->GetKernelMaxWorkGroupSize(*kernel), 1};
+#else
   std::vector<int> lws{16, 4};
+#endif
+
   cl::Event event;
   runtime->command_queue().enqueueNDRangeKernel(*kernel, cl::NullRange,
                                                 cl::NDRange(gws[0], gws[1]),
@@ -134,9 +138,9 @@ OpenCLLinearOp::OpenCLLinearOp() {
 
   kernel_ = std::make_shared<cl::Kernel>();
   kernelNoBias_ = std::make_shared<cl::Kernel>();
-  runtime->BuildKernel("gemv", {OPENCL_BASE_BUILD_OPTIONS, "-DHAS_BIAS"},
+  runtime->BuildKernel("gemv", {"-DOP=Linear", "-DHAS_BIAS"},
                        "GemvConv1x1Impl", kernel_.get());
-  runtime->BuildKernel("gemv", {OPENCL_BASE_BUILD_OPTIONS}, "GemvConv1x1Impl",
+  runtime->BuildKernel("gemv", {"-DOP=Linear"}, "GemvConv1x1Impl",
                        kernelNoBias_.get());
 }
 

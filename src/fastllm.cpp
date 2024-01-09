@@ -3,7 +3,9 @@
 //
 
 #include "devices/cpu/cpudevice.h"
+#ifdef USE_OPENCL
 #include "devices/opencl/opencldevice.h"
+#endif
 #include "utils.h"
 
 #include "fastllm.h"
@@ -427,11 +429,13 @@ namespace fastllm {
             ErrorInFastLLM("Error: cuda is not supported.\n");
 #endif
         } else if (this->dataDevice == DataDevice::OPENCL) {
+#ifdef USE_OPENCL
             if (this->openclData_ != nullptr) {
                 oclAllocator->Delete(openclData_);
             }
 
             oclAllocator->New(expansionBytes, (void**) &openclData_);
+#endif
         }
     }
 
@@ -803,10 +807,6 @@ namespace fastllm {
         if (this->dataType == DataType::INT32PARAM) {
             return;
         }
-#ifndef USE_CUDA
-        // TODO: 这里先直接跳过了
-        return;
-#endif
         if (this->dataDevice == device &&
             (this->dataDevice == DataDevice::CPU || deviceIds.size() == 0 || this->dataDeviceIds == deviceIds)) {
             return;

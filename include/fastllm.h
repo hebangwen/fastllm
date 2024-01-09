@@ -5,7 +5,11 @@
 #ifndef TEST_FASTLLM_H
 #define TEST_FASTLLM_H
 
+#ifdef USE_OPENCL
 #include <CL/opencl.hpp>
+#include "devices/opencl/opencl_allocator.h"
+#endif
+
 #include <vector>
 #include <cstdint>
 #include <string>
@@ -19,7 +23,6 @@
 #include <functional>
 #include <memory>
 #include "devices/cpu/cputhreadpool.h"
-#include "devices/opencl/opencl_allocator.h"
 
 #ifdef USE_SENTENCEPIECE
 #include <sentencepiece_processor.h>
@@ -241,7 +244,9 @@ namespace fastllm {
 
         // TODO(hebangwen): 使用
         void *openclData_ = nullptr;  // OpenCL Buffer 内存
+#ifdef USE_OPENCL
         OpenCLAllocator *oclAllocator = OpenCLAllocator::GetGlobalOpenCLAllocator();
+#endif
 
         DataDevice dataDevice = DataDevice::CPU;
         std::vector <int> dataDeviceIds;

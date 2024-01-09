@@ -10,7 +10,17 @@
 #include <spdlog/spdlog.h>
 #include <string>
 
+#define OPENCL_BASE_BUILD_OPTIONS                                              \
+  "-cl-std=CL3.0 -cl-mad-enable -cl-fast-relaxed-math"
+
 namespace fastllm {
+
+#ifdef __aarch64__
+void printf_callback( const char *buffer, size_t len, size_t complete, void *user_data ) {
+    printf( "%.*s", len, buffer );
+}
+#endif
+
 OpenCLRuntime::OpenCLRuntime() {
   std::vector<cl::Platform> platforms;
   cl::Platform::get(&platforms);
@@ -29,8 +39,20 @@ OpenCLRuntime::OpenCLRuntime() {
   device_->getInfo(CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE,
                    &globalMemCacheLineSize_);
   device_->getInfo(CL_DEVICE_MAX_COMPUTE_UNITS, &deviceComputeUnits_);
+  // printf("device extensions: %s\n", device_->getInfo<CL_DEVICE_EXTENSIONS>().c_str());
 
-  context_ = std::make_shared<cl::Context>(*device_, nullptr, nullptr, nullptr);
+#ifdef __aarch64__
+  cl_context_properties properties[] = {
+      CL_PRINTF_CALLBACK_ARM,   (cl_context_properties) printf_callback,
+      CL_PRINTF_BUFFERSIZE_ARM, (cl_context_properties) 0x100000,
+      CL_CONTEXT_PLATFORM,      (cl_context_properties) platform(),
+      0
+  };
+#else
+  cl_context_properties *properties = nullptr;
+#endif
+
+  context_ = std::make_shared<cl::Context>(*device_, properties, nullptr, nullptr, nullptr);
 
   queue_ = std::make_shared<cl::CommandQueue>(*context_, *device_);
 }
@@ -65,13 +87,12 @@ OpenCLRuntime::GetKernelMaxWorkGroupSize(const cl::Kernel &kernel) const {
 void OpenCLRuntime::BuildProgram(const std::string &programName,
                                  const std::string &buildOptions,
                                  cl::Program *program) {
-  spdlog::debug("program name: {}, build options: {}", programName, buildOptions);
   auto it = GetOpenCLPrograms(programName);
   AssertInFastLLM(it != nullptr, "program not found");
   std::string programSource(it->begin(), it->end());
 
   *program = cl::Program(*context_, programSource);
-  cl_int ret = program->build({*device_}, buildOptions.c_str());
+  cl_int ret = program->build(*device_, buildOptions.c_str());
   if (ret != CL_SUCCESS) {
     size_t buildLogSize;
     clGetProgramBuildInfo((cl_program)(*program)(), (cl_device_id)(*device_)(),
@@ -103,7 +124,10 @@ void OpenCLRuntime::BuildKernel(const std::string &programName,
   }
 
   cl::Program program;
-  BuildProgram(programName, concatBuildOptions, &program);
+  std::string finalBuildOptions = " " + concatBuildOptions;
+  finalBuildOptions = OPENCL_BASE_BUILD_OPTIONS + finalBuildOptions;
+
+  BuildProgram(programName, finalBuildOptions, &program);
   builtPrograms_[key] = program;
 
   cl_int err;

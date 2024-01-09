@@ -1,12 +1,13 @@
 #include "devices/opencl/opencl_allocator.h"
-#include "devices/opencl/opencldevice.h"
 #include "devices/opencl/opencl_runtime.h"
+#include "devices/opencl/opencldevice.h"
 #include "spdlog/fmt/bundled/core.h"
 #include "spdlog/fmt/bundled/format.h"
 #include "utils.h"
 #include <chrono>
 #include <cstdint>
 #include <initializer_list>
+#include <memory>
 #include <vector>
 // #define CL_TARGET_OPENCL_VERSION 300
 // #define CL_HPP_TARGET_OPENCL_VERSION 300
@@ -187,7 +188,6 @@ int main(int argc, char *argv[]) {
     benchmarkRounds = std::stoi(argv[1]);
   int m = 4096, k = 4608;
 
-  spdlog::debug("{}:{}", __FILE__, __LINE__);
   fastllm::Data input{fastllm::FLOAT32, {1, m}};
   input.Allocate(0.5f);
   input.RandomizeData();
@@ -198,7 +198,6 @@ int main(int argc, char *argv[]) {
   fastllm::Data bias{fastllm::FLOAT32, {k}};
   bias.Allocate(0.0f);
 
-  spdlog::debug("{}:{}", __FILE__, __LINE__);
   fastllm::TimeRecord recorder;
 #ifdef USE_CUDA
   input.ToDevice(fastllm::CUDA);
@@ -237,11 +236,9 @@ int main(int argc, char *argv[]) {
       fastllm::OpenCLAllocator::GetGlobalOpenCLAllocator();
   auto &context = runtime->context();
   auto &device = runtime->device();
+  spdlog::info("OpenCL platform: {}", runtime->GetPlatformInfo());
 
   std::string compileOptions{COMPILE_OPTIONS};
-  compileOptions += fmt::format(" -DLOCAL_SIZE={}", warpSize);
-  cl::Program program =
-      buildProgram(context, device, {kernelFilePath}, compileOptions);
 
   auto &queue = runtime->command_queue();
   cl::Buffer *bufferInput;
@@ -250,7 +247,8 @@ int main(int argc, char *argv[]) {
 
   cl::Buffer *bufferWeightInt4;
   allocator->New(weight.GetBytes(), (void **)&bufferWeightInt4);
-  CopyBufferFromCPU(allocator, bufferWeightInt4, weight.cpuData, weight.GetBytes());
+  CopyBufferFromCPU(allocator, bufferWeightInt4, weight.cpuData,
+                    weight.GetBytes());
 
   cl::Buffer *bufferOutput;
   allocator->New(result.GetBytes(), (void **)&bufferOutput);
@@ -262,44 +260,52 @@ int main(int argc, char *argv[]) {
 
   cl::Buffer *bufferScales;
   allocator->New(k * sizeof(float), (void **)&bufferScales);
-  CopyBufferFromCPU(allocator, bufferScales, weight.scales.data(), k * sizeof(float));
+  CopyBufferFromCPU(allocator, bufferScales, weight.scales.data(),
+                    k * sizeof(float));
 
   cl::Buffer *bufferMins;
   allocator->New(k * sizeof(float), (void **)&bufferMins);
-  CopyBufferFromCPU(allocator, bufferMins, weight.mins.data(), k * sizeof(float));
+  CopyBufferFromCPU(allocator, bufferMins, weight.mins.data(),
+                    k * sizeof(float));
 
   int idx = 0;
   fastllm::Data gemvConvOut(fastllm::FLOAT32, {1, k});
   gemvConvOut.Allocate(0.5f);
-  {
-    cl::Kernel gemvConvKernel{program, "GemvConv1x1Impl"};
+  cl::Kernel gemvConvKernel;
+  runtime->BuildKernel("gemv", {"-DOP=Linear", "-DHAS_BIAS"},
+                        "GemvConv1x1Impl", &gemvConvKernel);
 
-    idx = 0;
-    gemvConvKernel.setArg(idx++, *bufferInput);
-    gemvConvKernel.setArg(idx++, *bufferWeightInt4);
-    gemvConvKernel.setArg(idx++, *bufferOutput);
-    gemvConvKernel.setArg(idx++, *bufferBias);
-    gemvConvKernel.setArg(idx++, *bufferScales);
-    gemvConvKernel.setArg(idx++, *bufferMins);
-    gemvConvKernel.setArg(idx++, k);
-    gemvConvKernel.setArg(idx++, m);
+  idx = 0;
+  gemvConvKernel.setArg(idx++, *bufferInput);
+  gemvConvKernel.setArg(idx++, *bufferWeightInt4);
+  gemvConvKernel.setArg(idx++, *bufferOutput);
+  gemvConvKernel.setArg(idx++, *bufferBias);
+  gemvConvKernel.setArg(idx++, *bufferScales);
+  gemvConvKernel.setArg(idx++, *bufferMins);
+  gemvConvKernel.setArg(idx++, k);
+  gemvConvKernel.setArg(idx++, m);
 
-    std::vector<int> gws = {k >> 2, 1};
-    auto lws = FindKernelWorkgroupSize(gemvConvKernel, device, queue, gws);
-    spdlog::info("gemvConv kernel: {}", lws);
+  std::vector<int> gws = {k >> 2, 1};
+  auto lws = FindKernelWorkgroupSize(gemvConvKernel, device, queue, gws);
+  lws[0] = GetKernelMaxWorkGroupSize(gemvConvKernel, device), lws[1] = 1;
+  spdlog::info("gemvConv kernel: {}", lws);
 
-    for (int i = 0; i < benchmarkRounds; i++) {
-      recorder.Record();
-      queue.enqueueNDRangeKernel(gemvConvKernel, cl::NullRange,
-                                 cl::NDRange(gws[0], gws[1]),
-                                 cl::NDRange(lws[0], lws[1]));
-      queue.finish();
-      recorder.Record(fmt::format("GemvConv {:02d}", i));
-    }
-
-    queue.enqueueReadBuffer(*bufferOutput, CL_TRUE, 0, gemvConvOut.GetBytes(),
-                            gemvConvOut.cpuData);
+  for (int i = 0; i < benchmarkRounds; i++) {
+    recorder.Record();
+    queue.enqueueNDRangeKernel(gemvConvKernel, cl::NullRange,
+                                cl::NDRange(gws[0], gws[1]),
+                                cl::NDRange(lws[0], lws[1]));
+    queue.finish();
+    recorder.Record(fmt::format("GemvConv {:02d}", i));
   }
+
+  // queue.enqueueReadBuffer(*bufferOutput, CL_TRUE, 0, gemvConvOut.GetBytes(),
+  //                         gemvConvOut.cpuData);
+
+  float *res = (float *) allocator->Map(bufferOutput, 0, gemvConvOut.GetBytes(), true);
+  for (int i = 0; i < 10; i++) printf("%f%c", res[i], i == 9 ? '\n' : ' ');
+  std::memcpy(gemvConvOut.cpuData, res, gemvConvOut.GetBytes());
+  allocator->Unmap(bufferOutput, res);
 
 #ifdef USE_OPENCL
   fastllm::ApplyDeviceMap({{"opencl", 10}}, 0, 0);
@@ -308,8 +314,6 @@ int main(int argc, char *argv[]) {
   bias.ToDevice(fastllm::DataDevice::OPENCL);
 
   fastllm::Data output(fastllm::FLOAT32, {1, k});
-  output.Allocate();
-  output.ToDevice(fastllm::DataDevice::OPENCL);
 
   for (int i = 0; i < benchmarkRounds; i++) {
     recorder.Record();
@@ -323,7 +327,7 @@ int main(int argc, char *argv[]) {
   fastllm::Data output{fastllm::FLOAT32, {1, k}};
   output.Allocate(0.5f);
 #endif
-
+  
   // convOutput.Print();
   PrintOutputValues<float>({&result, &result1, &gemvConvOut, &output});
   spdlog::debug("mins: {}, scales: {}", weight.mins[0], weight.scales[0]);
