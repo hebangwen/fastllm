@@ -102,7 +102,8 @@ void OpenCLRuntime::BuildKernel(const std::string &programName,
   }
   cl::Program program;
   BuildProgram(programName, concatBuildOptions, &program);
-  builtPrograms_[programName] = program;
+  std::string key = programName + " " + concatBuildOptions;
+  builtPrograms_[key] = program;
 
   cl_int err;
   *kernel = cl::Kernel(program, kernelName.c_str(), &err);

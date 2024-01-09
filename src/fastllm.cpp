@@ -3,6 +3,7 @@
 //
 
 #include "devices/cpu/cpudevice.h"
+#include "devices/opencl/opencldevice.h"
 #include "utils.h"
 
 #include "fastllm.h"
@@ -430,7 +431,7 @@ namespace fastllm {
                 oclAllocator->Delete(openclData_);
             }
 
-            oclAllocator->New(size, (void**) &openclData_);
+            oclAllocator->New(expansionBytes, (void**) &openclData_);
         }
     }
 
@@ -453,6 +454,7 @@ namespace fastllm {
 #ifdef USE_OPENCL
             if (this->openclData_ != nullptr) {
                 oclAllocator->Delete(this->openclData_);
+                openclData_ = nullptr;
             }
 #endif
         }
@@ -573,8 +575,8 @@ namespace fastllm {
 #endif
             } else if (this->dataDevice == DataDevice::OPENCL) {
 #ifdef USE_OPENCL
-                cl::Buffer *oldBuffer = this->openclData_;
-                oclAllocator->New(expandedSize, (void**) &openclData_);
+                auto *oldBuffer = this->openclData_;
+                oclAllocator->New(expandedSize, &openclData_);
 
                 uint8_t *oldBufferMapped = (uint8_t*) oclAllocator->Map(oldBuffer, 0, oldBytes, true);
                 uint8_t *newBufferMapped = (uint8_t*) oclAllocator->Map(openclData_, 0, GetBytes(), true);
@@ -784,9 +786,11 @@ namespace fastllm {
     }
 
     void Data::ToDevice(fastllm::DataDevice device) {
+        static const char *map[] = {"cpu", "cuda", "opencl"};
         if (device == DataDevice::CUDA) {
             ToDevice(device, curExecutor->GetDeviceIds("cuda"));
         } else if (device == DataDevice::OPENCL) {
+            printf("%s to opencl\n", map[this->dataDevice]);
             ToDevice(device, curExecutor->GetDeviceIds("opencl"));
         } else {
             ToDevice(device, {0});
@@ -811,8 +815,8 @@ namespace fastllm {
 
         if (this->expansionBytes != 0) {
             if (this->dataDevice == DataDevice::CPU) {
-#ifdef USE_CUDA
                 if (device == DataDevice::CUDA) {
+#ifdef USE_CUDA
                     uint8_t *cpuData = this->cpuData;
 #ifdef USE_MMAP
                     cpuData = new uint8_t[expansionBytes];
@@ -836,10 +840,8 @@ namespace fastllm {
                     cpuData = new uint8_t[expansionBytes];
                     memcpy(cpuData, this->cpuData, expansionBytes);
 #endif
-                    oclAllocator->New(expansionBytes, (void**) &openclData_);
-                    void *oclDataPtr = oclAllocator->Map(openclData_, 0, expansionBytes, true);
-                    std::memcpy(oclDataPtr, cpuData, expansionBytes);
-                    oclAllocator->Unmap(openclData_, oclDataPtr);
+                    oclAllocator->New(expansionBytes, &openclData_);
+                    CopyBufferFromCPU(oclAllocator, this->openclData_, this->cpuData, expansionBytes);
 #ifdef USE_MMAP
                     delete[] cpuData;
 #else
@@ -874,10 +876,10 @@ namespace fastllm {
 #ifdef USE_OPENCL
                 if (device == DataDevice::CPU) {
                     this->cpuData = new uint8_t[expansionBytes];
-                    void *oclDataPtr = oclAllocator->Map(this->openclData_, 0, expansionBytes, true);
-                    std::memcpy(this->cpuData, oclDataPtr, expansionBytes);
-                    oclAllocator->Unmap(this->openclData_, oclDataPtr);
+                    printf("copy output from opencl to cpu, bytes: %lu\n", expansionBytes);
+                    CopyBufferToCPU(oclAllocator, this->cpuData, this->openclData_, expansionBytes);
                     oclAllocator->Delete(this->openclData_);
+                    this->openclData_ = nullptr;
                 } else if (device == DataDevice::OPENCL) {
                     ErrorInFastLLM("OPENCL to OPENCL is not supported!");
                 } else {
@@ -890,7 +892,7 @@ namespace fastllm {
             this->dataDeviceIds = {0};
         } else {
             this->dataDeviceIds = deviceIds;
-        };
+        }
         this->dataDevice = device;
     }
 

@@ -240,7 +240,7 @@ namespace fastllm {
         std::vector <void*> extraDeviceData;
 
         // TODO(hebangwen): 使用
-        cl::Buffer *openclData_ = nullptr;  // OpenCL Buffer 内存
+        void *openclData_ = nullptr;  // OpenCL Buffer 内存
         OpenCLAllocator *oclAllocator = OpenCLAllocator::GetGlobalOpenCLAllocator();
 
         DataDevice dataDevice = DataDevice::CPU;

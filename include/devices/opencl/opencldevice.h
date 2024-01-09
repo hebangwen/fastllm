@@ -7,6 +7,9 @@
 #include <memory>
 
 namespace fastllm {
+
+    void CopyBufferFromCPU(OpenCLAllocator *allocator, void *dst, void *src, size_t size);
+    void CopyBufferToCPU(OpenCLAllocator *allocator, void *dst, void *src, size_t size);
     class OpenCLDevice : BaseDevice {
     public:
         OpenCLDevice();

@@ -1,4 +1,5 @@
 #include "devices/opencl/opencldevice.h"
+#include "CL/cl.h"
 #include "device.h"
 #include "devices/opencl/opencl_allocator.h"
 #include "devices/opencl/opencl_runtime.h"
@@ -11,16 +12,20 @@
   "-cl-std=CL3.0 -cl-mad-enable -cl-fast-relaxed-math"
 
 namespace fastllm {
-void CopyBufferFromCPU(OpenCLAllocator *allocator, cl::Buffer *dst, void *src,
+void CopyBufferFromCPU(OpenCLAllocator *allocator, void *dst, void *src,
                        size_t size) {
   void *oclPtr = allocator->Map(dst, 0, size, true);
   std::memcpy(oclPtr, src, size);
   allocator->Unmap(dst, oclPtr);
 }
 
-void CopyBufferToCPU(OpenCLAllocator *allocator, void *dst, cl::Buffer *src,
+void CopyBufferToCPU(OpenCLAllocator *allocator, void *dst, void *src,
                      size_t size) {
   void *oclPtr = allocator->Map(src, 0, size, true);
+  // float *data = (float*) oclPtr;
+  // for (int i = 0;i < 10; i++) {
+  //   printf("%f%c", data[i], " \n"[i == 9]);
+  // }
   std::memcpy(dst, oclPtr, size);
   allocator->Unmap(src, oclPtr);
 }
@@ -48,8 +53,7 @@ bool OpenCLDevice::Free(void *ret) {
 }
 
 bool OpenCLDevice::CopyDataToCPU(void *dst, void *src, size_t size) {
-  cl::Buffer *buffer = (cl::Buffer *)src;
-  CopyBufferToCPU(oclAllocator_, dst, buffer, size);
+  CopyBufferToCPU(oclAllocator_, dst, src, size);
 
   return true;
 }
@@ -69,8 +73,7 @@ bool OpenCLDevice::CopyDataToCPU(Data &data) {
 }
 
 bool OpenCLDevice::CopyDataFromCPU(void *dst, void *src, size_t size) {
-  cl::Buffer *buffer = (cl::Buffer *)dst;
-  CopyBufferFromCPU(oclAllocator_, buffer, src, size);
+  CopyBufferFromCPU(oclAllocator_, dst, src, size);
   return true;
 }
 
@@ -82,16 +85,19 @@ bool OpenCLDevice::CopyDataFromCPU(Data &data) {
                   "Copy data to " + this->deviceName +
                       " from cpu failed: device's data is not null.\n");
 
-  Malloc((void **)&data.openclData_, data.expansionBytes);
+  Malloc(&data.openclData_, data.expansionBytes);
   CopyDataFromCPU(data.openclData_, data.cpuData, data.expansionBytes);
   delete[] data.cpuData;
   data.cpuData = nullptr;
   return true;
 }
 
-void FastllmOpenCLMatVecMulFloatInt4NoZero(
-    cl::Kernel *kernel, fastllm::Data &input, fastllm::Data &weight,
-    fastllm::Data &bias, fastllm::Data &output, int n, int m, int k, bool hasBias) {
+void FastllmOpenCLMatVecMulFloatInt4NoZero(cl::Kernel *kernel,
+                                           fastllm::Data &input,
+                                           fastllm::Data &weight,
+                                           fastllm::Data &bias,
+                                           fastllm::Data &output, int n, int m,
+                                           int k, bool hasBias) {
   OpenCLRuntime *runtime = OpenCLRuntime::GetGlobalOpenCLRuntime();
   OpenCLAllocator *allocator = OpenCLAllocator::GetGlobalOpenCLAllocator();
 
@@ -102,11 +108,11 @@ void FastllmOpenCLMatVecMulFloatInt4NoZero(
   CopyBufferFromCPU(allocator, mins, weight.mins.data(), k * sizeof(float));
 
   int idx = 0;
-  kernel->setArg(idx++, *input.openclData_);
-  kernel->setArg(idx++, *weight.openclData_);
-  kernel->setArg(idx++, *output.openclData_);
+  kernel->setArg(idx++, *(cl::Buffer *)input.openclData_);
+  kernel->setArg(idx++, *(cl::Buffer *) weight.openclData_);
+  kernel->setArg(idx++, *(cl::Buffer*) output.openclData_);
   if (hasBias) {
-    kernel->setArg(idx++, *bias.openclData_);
+    kernel->setArg(idx++, *(cl::Buffer *) bias.openclData_);
   }
   kernel->setArg(idx++, *scales);
   kernel->setArg(idx++, *mins);
@@ -114,10 +120,13 @@ void FastllmOpenCLMatVecMulFloatInt4NoZero(
   kernel->setArg(idx++, m);
 
   std::vector<int> gws{k >> 2, 1};
-  std::vector<int> lws{2, 256};
+  std::vector<int> lws{256, 2};
+  cl::Event event;
   runtime->command_queue().enqueueNDRangeKernel(*kernel, cl::NullRange,
                                                 cl::NDRange(gws[0], gws[1]),
-                                                cl::NDRange(lws[0], lws[1]));
+                                                cl::NDRange(lws[0], lws[1]),
+                                                nullptr, &event);
+  event.wait();
   runtime->command_queue().finish();
 
   allocator->Delete(scales);
@@ -152,6 +161,7 @@ void OpenCLLinearOp::Reshape(const std::string &opType, const DataDict &datas,
   dims.back() = weight.dims[0];
 
   output.dataType = DataType::FLOAT32;
+  output.dataDevice = DataDevice::OPENCL;
   output.Resize(dims);
 }
 
@@ -175,10 +185,11 @@ void OpenCLLinearOp::Run(const std::string &opType, const DataDict &datas,
   int k = output.dims.back();
 
   if (input.dataType == DataType::FLOAT32 &&
-      output.dataType == DataType::INT4_NOZERO) {
+      weight.dataType == DataType::INT4_NOZERO) {
     bool hasBias = bias.dims.size() > 0;
     cl::Kernel *kernel = hasBias ? kernel_.get() : kernelNoBias_.get();
-    FastllmOpenCLMatVecMulFloatInt4NoZero(kernel, input, weight, output, bias, n, m, k, hasBias);
+    FastllmOpenCLMatVecMulFloatInt4NoZero(kernel, input, weight, output, bias,
+                                          n, m, k, hasBias);
   } else {
     ErrorInFastLLM("OpenCLLinearOp error: data type error.\n");
   }
