@@ -90,19 +90,20 @@ void OpenCLRuntime::BuildKernel(const std::string &programName,
                                 const std::vector<std::string> &buildOptions,
                                 const std::string &kernelName,
                                 cl::Kernel *kernel) {
-  auto it = builtPrograms_.find(programName);
+  std::string concatBuildOptions = buildOptions[0];
+  for (int i = 1; i < buildOptions.size(); i++) {
+    concatBuildOptions += " " + buildOptions[i];
+  }
+  std::string key = programName + " " + concatBuildOptions;
+
+  auto it = builtPrograms_.find(key);
   if (it != builtPrograms_.end()) {
     *kernel = cl::Kernel(it->second, kernelName.c_str());
     return;
   }
 
-  std::string concatBuildOptions = buildOptions[0];
-  for (int i = 1; i < buildOptions.size(); i++) {
-    concatBuildOptions += " " + buildOptions[i];
-  }
   cl::Program program;
   BuildProgram(programName, concatBuildOptions, &program);
-  std::string key = programName + " " + concatBuildOptions;
   builtPrograms_[key] = program;
 
   cl_int err;

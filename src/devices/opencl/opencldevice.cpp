@@ -22,10 +22,6 @@ void CopyBufferFromCPU(OpenCLAllocator *allocator, void *dst, void *src,
 void CopyBufferToCPU(OpenCLAllocator *allocator, void *dst, void *src,
                      size_t size) {
   void *oclPtr = allocator->Map(src, 0, size, true);
-  // float *data = (float*) oclPtr;
-  // for (int i = 0;i < 10; i++) {
-  //   printf("%f%c", data[i], " \n"[i == 9]);
-  // }
   std::memcpy(dst, oclPtr, size);
   allocator->Unmap(src, oclPtr);
 }
@@ -120,7 +116,7 @@ void FastllmOpenCLMatVecMulFloatInt4NoZero(cl::Kernel *kernel,
   kernel->setArg(idx++, m);
 
   std::vector<int> gws{k >> 2, 1};
-  std::vector<int> lws{256, 2};
+  std::vector<int> lws{16, 4};
   cl::Event event;
   runtime->command_queue().enqueueNDRangeKernel(*kernel, cl::NullRange,
                                                 cl::NDRange(gws[0], gws[1]),
@@ -188,7 +184,7 @@ void OpenCLLinearOp::Run(const std::string &opType, const DataDict &datas,
       weight.dataType == DataType::INT4_NOZERO) {
     bool hasBias = bias.dims.size() > 0;
     cl::Kernel *kernel = hasBias ? kernel_.get() : kernelNoBias_.get();
-    FastllmOpenCLMatVecMulFloatInt4NoZero(kernel, input, weight, output, bias,
+    FastllmOpenCLMatVecMulFloatInt4NoZero(kernel, input, weight, bias, output,
                                           n, m, k, hasBias);
   } else {
     ErrorInFastLLM("OpenCLLinearOp error: data type error.\n");

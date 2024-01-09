@@ -63,7 +63,7 @@ void *OpenCLAllocator::Map(void *buffer, size_t offset, size_t nbytes,
                            bool finish_cmd_queue) const {
   void *mapped_ptr = nullptr;
   auto cl_buffer = static_cast<cl::Buffer *>(buffer);
-  auto queue = opencl_runtime_->command_queue();
+  auto &queue = opencl_runtime_->command_queue();
   // TODO(heliangliang) Non-blocking call
   cl_int error;
   mapped_ptr =
@@ -78,7 +78,7 @@ void *OpenCLAllocator::Map(void *buffer, size_t offset, size_t nbytes,
 void OpenCLAllocator::Unmap(void *buffer, void *mapped_ptr) const {
 
   auto cl_buffer = static_cast<cl::Buffer *>(buffer);
-  auto queue = opencl_runtime_->command_queue();
+  auto &queue = opencl_runtime_->command_queue();
   cl_int error =
       queue.enqueueUnmapMemObject(*cl_buffer, mapped_ptr, nullptr, nullptr);
   AssertInFastLLM(error == CL_SUCCESS,

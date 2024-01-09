@@ -790,7 +790,6 @@ namespace fastllm {
         if (device == DataDevice::CUDA) {
             ToDevice(device, curExecutor->GetDeviceIds("cuda"));
         } else if (device == DataDevice::OPENCL) {
-            printf("%s to opencl\n", map[this->dataDevice]);
             ToDevice(device, curExecutor->GetDeviceIds("opencl"));
         } else {
             ToDevice(device, {0});
@@ -876,7 +875,6 @@ namespace fastllm {
 #ifdef USE_OPENCL
                 if (device == DataDevice::CPU) {
                     this->cpuData = new uint8_t[expansionBytes];
-                    printf("copy output from opencl to cpu, bytes: %lu\n", expansionBytes);
                     CopyBufferToCPU(oclAllocator, this->cpuData, this->openclData_, expansionBytes);
                     oclAllocator->Delete(this->openclData_);
                     this->openclData_ = nullptr;

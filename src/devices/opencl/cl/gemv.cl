@@ -47,6 +47,6 @@ __kernel void GemvConv1x1Impl(
   vstore4(out0, 0, output + output_offset);
 
   // if (gid0 == 0 || gid0 == 1) {
-  //   printf("%f %f %f %f\n", out0[0], out0[1], out0[2], out0[3]);
+  //   printf("%v4lf\n", out0);
   // }
 }

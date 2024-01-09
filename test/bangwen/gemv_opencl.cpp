@@ -1,3 +1,5 @@
+#include "devices/opencl/opencl_allocator.h"
+#include "devices/opencl/opencldevice.h"
 #include "devices/opencl/opencl_runtime.h"
 #include "spdlog/fmt/bundled/core.h"
 #include "spdlog/fmt/bundled/format.h"
@@ -227,13 +229,12 @@ int main(int argc, char *argv[]) {
     recorder.Record(spdlog::fmt_lib::format("CPU {:02d}", i));
   }
 
-  // int warpSize = 64;
   int warpSize = 256;
-  fastllm::Data result2{fastllm::FLOAT32, {1, k}};
-  result2.Allocate(0.5f);
 
   fastllm::OpenCLRuntime *runtime =
       fastllm::OpenCLRuntime::GetGlobalOpenCLRuntime();
+  fastllm::OpenCLAllocator *allocator =
+      fastllm::OpenCLAllocator::GetGlobalOpenCLAllocator();
   auto &context = runtime->context();
   auto &device = runtime->device();
 
@@ -243,73 +244,43 @@ int main(int argc, char *argv[]) {
       buildProgram(context, device, {kernelFilePath}, compileOptions);
 
   auto &queue = runtime->command_queue();
+  cl::Buffer *bufferInput;
+  allocator->New(input.GetBytes(), (void **)&bufferInput);
+  CopyBufferFromCPU(allocator, bufferInput, input.cpuData, input.GetBytes());
 
-  cl::Buffer bufferA{context, CL_MEM_READ_WRITE, input.GetBytes()};
-  cl::Buffer bufferB{context, CL_MEM_READ_WRITE, weight.GetBytes()};
-  cl::Buffer bufferC{context, CL_MEM_READ_WRITE, result2.GetBytes()};
-  cl::Buffer bufferBias{context, CL_MEM_READ_WRITE, bias.GetBytes()};
-  cl::Buffer bufferScales{context, CL_MEM_READ_WRITE,
-                          weight.scales.size() * sizeof(float)};
-  cl::Buffer bufferMins{context, CL_MEM_READ_WRITE,
-                        weight.mins.size() * sizeof(float)};
+  cl::Buffer *bufferWeightInt4;
+  allocator->New(weight.GetBytes(), (void **)&bufferWeightInt4);
+  CopyBufferFromCPU(allocator, bufferWeightInt4, weight.cpuData, weight.GetBytes());
 
-  cl_int ret = CL_SUCCESS;
-  ret |= queue.enqueueWriteBuffer(bufferA, CL_TRUE, 0, input.GetBytes(),
-                                  input.cpuData);
-  ret |= queue.enqueueWriteBuffer(bufferB, CL_TRUE, 0, weight.GetBytes(),
-                                  weight.cpuData);
-  ret |= queue.enqueueWriteBuffer(bufferBias, CL_TRUE, 0, bias.GetBytes(),
-                                  bias.cpuData);
-  ret |= queue.enqueueWriteBuffer(bufferScales, CL_TRUE, 0, k * sizeof(float),
-                                  weight.scales.data());
-  ret |= queue.enqueueWriteBuffer(bufferMins, CL_TRUE, 0, k * sizeof(float),
-                                  weight.mins.data());
+  cl::Buffer *bufferOutput;
+  allocator->New(result.GetBytes(), (void **)&bufferOutput);
+  CopyBufferFromCPU(allocator, bufferOutput, result.cpuData, result.GetBytes());
 
-  // FASTLLM_CHECK_CL_SUCCESS(ret, "enqueue write buffer");
-  // cl::Kernel kernel{program, "GemvFloatInt4NoZero"};
+  cl::Buffer *bufferBias;
+  allocator->New(bias.GetBytes(), (void **)&bufferBias);
+  CopyBufferFromCPU(allocator, bufferBias, bias.cpuData, bias.GetBytes());
+
+  cl::Buffer *bufferScales;
+  allocator->New(k * sizeof(float), (void **)&bufferScales);
+  CopyBufferFromCPU(allocator, bufferScales, weight.scales.data(), k * sizeof(float));
+
+  cl::Buffer *bufferMins;
+  allocator->New(k * sizeof(float), (void **)&bufferMins);
+  CopyBufferFromCPU(allocator, bufferMins, weight.mins.data(), k * sizeof(float));
 
   int idx = 0;
-  // ret |= kernel.setArg(idx++, bufferA);
-  // ret |= kernel.setArg(idx++, bufferB);
-  // ret |= kernel.setArg(idx++, bufferC);
-  // ret |= kernel.setArg(idx++, bufferBias);
-  // ret |= kernel.setArg(idx++, bufferScales);
-  // ret |= kernel.setArg(idx++, bufferMins);
-  // ret |= kernel.setArg(idx++, m);
-  // ret |= kernel.setArg(idx++, k);
-  // FASTLLM_CHECK_CL_SUCCESS(ret, "kernel set args");
-
-  // for (int i = 0; i < benchmarkRounds; i++) {
-  //   recorder.Record();
-  //   ret |= queue.enqueueNDRangeKernel(kernel, cl::NullRange,
-  //                                     cl::NDRange(k, warpSize),
-  //                                     cl::NDRange(1, warpSize));
-  //   ret |= queue.finish();
-  //   recorder.Record(spdlog::fmt_lib::format("OpenCL {:02d}", i));
-  // }
-  // FASTLLM_CHECK_CL_SUCCESS(ret, "enqueue kernel");
-
-  // ret |= queue.enqueueReadBuffer(bufferC, CL_TRUE, 0, result2.GetBytes(),
-  //                                result2.cpuData);
-  // FASTLLM_CHECK_CL_SUCCESS(ret, "enqueue read buffer");
-
-  // fastllm::Data unquantWeight;
-  // ConvertInt4NoZeroToFloat(weight, unquantWeight);
-  // fastllm::Data unquantWeightOCL(unquantWeight.dataType, unquantWeight.dims);
-  // unquantWeightOCL.Allocate(0.0f);
-
   fastllm::Data gemvConvOut(fastllm::FLOAT32, {1, k});
   gemvConvOut.Allocate(0.5f);
   {
     cl::Kernel gemvConvKernel{program, "GemvConv1x1Impl"};
 
     idx = 0;
-    gemvConvKernel.setArg(idx++, bufferA);
-    gemvConvKernel.setArg(idx++, bufferB);
-    gemvConvKernel.setArg(idx++, bufferC);
-    gemvConvKernel.setArg(idx++, bufferBias);
-    gemvConvKernel.setArg(idx++, bufferScales);
-    gemvConvKernel.setArg(idx++, bufferMins);
+    gemvConvKernel.setArg(idx++, *bufferInput);
+    gemvConvKernel.setArg(idx++, *bufferWeightInt4);
+    gemvConvKernel.setArg(idx++, *bufferOutput);
+    gemvConvKernel.setArg(idx++, *bufferBias);
+    gemvConvKernel.setArg(idx++, *bufferScales);
+    gemvConvKernel.setArg(idx++, *bufferMins);
     gemvConvKernel.setArg(idx++, k);
     gemvConvKernel.setArg(idx++, m);
 
@@ -326,7 +297,7 @@ int main(int argc, char *argv[]) {
       recorder.Record(fmt::format("GemvConv {:02d}", i));
     }
 
-    queue.enqueueReadBuffer(bufferC, CL_TRUE, 0, gemvConvOut.GetBytes(),
+    queue.enqueueReadBuffer(*bufferOutput, CL_TRUE, 0, gemvConvOut.GetBytes(),
                             gemvConvOut.cpuData);
   }
 
@@ -354,7 +325,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   // convOutput.Print();
-  PrintOutputValues<float>({&result, &result1, &result2, &gemvConvOut, &output});
+  PrintOutputValues<float>({&result, &result1, &gemvConvOut, &output});
   spdlog::debug("mins: {}, scales: {}", weight.mins[0], weight.scales[0]);
 
   recorder.Print();
