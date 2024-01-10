@@ -49,7 +49,10 @@ OpenCLRuntime::OpenCLRuntime() {
       0
   };
 #else
-  cl_context_properties *properties = nullptr;
+  cl_context_properties properties[] = {
+      CL_CONTEXT_PLATFORM,      (cl_context_properties) platform(),
+      0
+  };
 #endif
 
   context_ = std::make_shared<cl::Context>(*device_, properties, nullptr, nullptr, nullptr);

@@ -101,6 +101,13 @@ void FastllmOpenCLMatVecMulFloatInt4NoZero(cl::Kernel *kernel,
   CopyBufferFromCPU(allocator, scales, weight.scales.data(), k * sizeof(float));
   CopyBufferFromCPU(allocator, mins, weight.mins.data(), k * sizeof(float));
 
+  std::vector<int> gws{k >> 2, 1};
+#ifdef __aarch64__
+  std::vector<int> lws{16, 1};
+#else
+  std::vector<int> lws{16, 4};
+#endif
+
   int idx = 0;
   kernel->setArg(idx++, *(cl::Buffer *)input.openclData_);
   kernel->setArg(idx++, *(cl::Buffer *) weight.openclData_);
@@ -112,14 +119,6 @@ void FastllmOpenCLMatVecMulFloatInt4NoZero(cl::Kernel *kernel,
   kernel->setArg(idx++, *mins);
   kernel->setArg(idx++, k);
   kernel->setArg(idx++, m);
-
-  std::vector<int> gws{k >> 2, 1};
-#ifdef __aarch64__
-  // arm GPU 不能使用非均匀划分的 workgroup
-  std::vector<int> lws{(int) runtime->GetKernelMaxWorkGroupSize(*kernel), 1};
-#else
-  std::vector<int> lws{16, 4};
-#endif
 
   cl::Event event;
   runtime->command_queue().enqueueNDRangeKernel(*kernel, cl::NullRange,
