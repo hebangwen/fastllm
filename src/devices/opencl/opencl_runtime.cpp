@@ -21,6 +21,21 @@ void printf_callback( const char *buffer, size_t len, size_t complete, void *use
 }
 #endif
 
+GPUType ParseGPUType(const std::string &device_name) {
+  constexpr const char *kQualcommAdrenoGPUStr = "QUALCOMM Adreno(TM)";
+  constexpr const char *kMaliGPUStr = "Mali";
+
+  if (device_name == kQualcommAdrenoGPUStr) {
+    return GPUType::GPU_QCOM_ADERNO;
+  } else if (device_name.find(kMaliGPUStr) != std::string::npos) {
+    return GPUType::GPU_ARM_MALI;
+  } else {
+    return GPUType::GPU_OTHER;
+  }
+}
+
+
+
 OpenCLRuntime::OpenCLRuntime() {
   std::vector<cl::Platform> platforms;
   cl::Platform::get(&platforms);
@@ -39,21 +54,35 @@ OpenCLRuntime::OpenCLRuntime() {
   device_->getInfo(CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE,
                    &globalMemCacheLineSize_);
   device_->getInfo(CL_DEVICE_MAX_COMPUTE_UNITS, &deviceComputeUnits_);
-  // printf("device extensions: %s\n", device_->getInfo<CL_DEVICE_EXTENSIONS>().c_str());
+  printf("device extensions: %s\n", device_->getInfo<CL_DEVICE_EXTENSIONS>().c_str());
+  gpuType_ = ParseGPUType(device_->getInfo<CL_DEVICE_NAME>());
 
+  cl_context_properties *properties = nullptr;
 #ifdef __aarch64__
-  cl_context_properties properties[] = {
-      CL_PRINTF_CALLBACK_ARM,   (cl_context_properties) printf_callback,
-      CL_PRINTF_BUFFERSIZE_ARM, (cl_context_properties) 0x100000,
-      CL_CONTEXT_PLATFORM,      (cl_context_properties) platform(),
-      0
-  };
-#else
-  cl_context_properties properties[] = {
-      CL_CONTEXT_PLATFORM,      (cl_context_properties) platform(),
-      0
-  };
+  if (gpuType_ == GPU_ARM_MALI) {
+    static cl_context_properties innerProperties[] = {
+        CL_PRINTF_CALLBACK_ARM,   (cl_context_properties) printf_callback,
+        CL_PRINTF_BUFFERSIZE_ARM, (cl_context_properties) 0x100000,
+        CL_CONTEXT_PLATFORM,      (cl_context_properties) platform(),
+        0
+    };
+
+    properties = innerProperties;
+  } else if (gpuType_ == GPU_QCOM_ADERNO) {
+    static cl_context_properties innerProperties[] = {
+        CL_CONTEXT_PLATFORM,      (cl_context_properties) platform(), 0
+    };
+    properties = innerProperties;
+  }
 #endif
+  if (gpuType_ == GPU_OTHER) {
+    static cl_context_properties innerProperties[] = {
+        CL_CONTEXT_PLATFORM,      (cl_context_properties) platform(),
+        0
+    };
+
+    properties = innerProperties;
+  }
 
   context_ = std::make_shared<cl::Context>(*device_, properties, nullptr, nullptr, nullptr);
 
@@ -105,7 +134,7 @@ void OpenCLRuntime::BuildProgram(const std::string &programName,
     clGetProgramBuildInfo((cl_program)(*program)(), (cl_device_id)(*device_)(),
                           CL_PROGRAM_BUILD_LOG, buildLogSize, log, NULL);
 
-    spdlog::error("build error: {}", log);
+    spdlog::error("build error: {}, error code: {}", log, OpenCLErrorToString(ret));
   }
   AssertInFastLLM(ret == CL_SUCCESS, "build error");
 }

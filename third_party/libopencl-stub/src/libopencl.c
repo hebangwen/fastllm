@@ -46,6 +46,7 @@ static const char *default_so_paths[] = {
   "/usr/lib64/libOpenCL.so",
   "/usr/lib32/libOpenCL.so",
   "/usr/lib/x86_64-linux-gnu/libOpenCL.so",
+  "/usr/lib/aarch64-linux-gnu/libOpenCL.so",
   "libOpenCL.so"
 };
 #endif

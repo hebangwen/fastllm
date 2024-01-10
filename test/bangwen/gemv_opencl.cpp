@@ -180,14 +180,14 @@ std::vector<uint32_t> FindKernelWorkgroupSize(cl::Kernel &kernel,
 }
 
 int main(int argc, char *argv[]) {
-  spdlog::debug("{}:{}", __FILE__, __LINE__);
   spdlog::set_level(spdlog::level::debug);
-  std::string kernelFilePath = "linear.cl";
   int benchmarkRounds = 10;
   if (argc > 1)
     benchmarkRounds = std::stoi(argv[1]);
   int m = 4096, k = 4608;
 
+  fastllm::SetThreads(4);
+  fastllm::PrintInstructionInfo();
   fastllm::Data input{fastllm::FLOAT32, {1, m}};
   input.Allocate(0.5f);
   input.RandomizeData();
@@ -303,7 +303,6 @@ int main(int argc, char *argv[]) {
   //                         gemvConvOut.cpuData);
 
   float *res = (float *) allocator->Map(bufferOutput, 0, gemvConvOut.GetBytes(), true);
-  for (int i = 0; i < 10; i++) printf("%f%c", res[i], i == 9 ? '\n' : ' ');
   std::memcpy(gemvConvOut.cpuData, res, gemvConvOut.GetBytes());
   allocator->Unmap(bufferOutput, res);
 

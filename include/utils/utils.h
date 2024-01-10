@@ -170,6 +170,12 @@ namespace fastllm {
 #endif
 }
 
+static inline uint64_t GetTimeMicros() {
+    uint64_t us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::high_resolution_clock::now().time_since_epoch())
+        .count();
+    return us; 
+}
 
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {

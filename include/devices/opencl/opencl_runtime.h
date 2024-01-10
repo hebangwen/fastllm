@@ -10,6 +10,10 @@ namespace fastllm {
 
 const std::string OpenCLErrorToString(cl_int error);
 
+enum GPUType {
+  GPU_ARM_MALI, GPU_QCOM_ADERNO, GPU_OTHER
+};
+
 class OpenCLRuntime {
 public:
   static OpenCLRuntime* GetGlobalOpenCLRuntime();
@@ -51,6 +55,7 @@ private:
   std::string platformInfo_;
   uint64_t globalMemCacheLineSize_;
   uint32_t deviceComputeUnits_;
+  GPUType gpuType_;
 };
 
 
