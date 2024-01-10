@@ -1,9 +1,15 @@
 __kernel void GemvConv1x1Impl(
+  const int gws0, const int gws1,
   __global float *input, __global uchar *weight, __global float *output,
   __global float *bias, __global float *scales, __global float *mins,
   const int k, const int m
 ) {
   int gid0 = get_global_id(0);
+  int gid1 = get_global_id(1);
+
+  if (gid1 > gws1) {
+    return;
+  }
 
   // [k, m] => [k//4, 4, m]
   int weight_width = m >> 1;

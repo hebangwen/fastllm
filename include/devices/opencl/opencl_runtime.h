@@ -30,6 +30,8 @@ public:
 
   cl::Device &device() const;
 
+  GPUType gpu_type() const;
+
   void BuildKernel(const std::string &programName,
                    const std::vector<std::string> &buildOptions,
                    const std::string &kernelName, cl::Kernel *kernel);

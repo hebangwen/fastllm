@@ -170,6 +170,11 @@ namespace fastllm {
 #endif
 }
 
+template <typename T>
+T RoundUp(T x, T y) {
+    return (x + y - 1) / y * y;
+}
+
 static inline uint64_t GetTimeMicros() {
     uint64_t us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::high_resolution_clock::now().time_since_epoch())

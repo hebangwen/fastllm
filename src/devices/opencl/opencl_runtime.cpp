@@ -173,6 +173,8 @@ cl::CommandQueue &OpenCLRuntime::command_queue() const { return *queue_; }
 
 cl::Device &OpenCLRuntime::device() const { return *device_; }
 
+GPUType OpenCLRuntime::gpu_type() const { return gpuType_; }
+
 OpenCLRuntime *OpenCLRuntime::GetGlobalOpenCLRuntime() {
   static OpenCLRuntime runtime;
   return &runtime;

@@ -1,6 +1,8 @@
 
 // [1, m] * [k//4, 4, m] => [1, k]
 __kernel void GemvConv1x1Impl(
+  const int gws0,
+  const int gws1,
   __global float *input, 
   __global uchar *weight, 
   __global float *output,
@@ -13,6 +15,10 @@ __kernel void GemvConv1x1Impl(
   const int m
 ) {
   int gid0 = get_global_id(0);
+  int gid1 = get_global_id(1);
+  if (gid1 > gws1) {
+    return;
+  }
 
   // [k, m] => [k//4, 4, m]
   int weight_width = m >> 1;

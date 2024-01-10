@@ -117,14 +117,14 @@ uint64_t GetKernelMaxWorkGroupSize(cl::Kernel &kernel, cl::Device &device) {
   return size;
 }
 
-std::vector<uint32_t> FindKernelWorkgroupSize(cl::Kernel &kernel,
+std::vector<int> FindKernelWorkgroupSize(cl::Kernel &kernel,
                                               cl::Device &device,
                                               cl::CommandQueue &queue,
                                               const std::vector<int> &gws) {
-  const uint32_t kwg_size =
-      static_cast<uint32_t>(GetKernelMaxWorkGroupSize(kernel, device));
-  std::vector<std::vector<uint32_t>> results;
-  std::vector<std::vector<uint32_t>> candidates = {{kwg_size / 2, 2, 0},
+  const int kwg_size =
+      static_cast<int>(GetKernelMaxWorkGroupSize(kernel, device));
+  std::vector<std::vector<int>> results;
+  std::vector<std::vector<int>> candidates = {{kwg_size / 2, 2, 0},
                                                    {kwg_size / 4, 4, 0},
                                                    {kwg_size / 8, 8, 0},
                                                    {kwg_size / 16, 16, 0},
@@ -139,15 +139,16 @@ std::vector<uint32_t> FindKernelWorkgroupSize(cl::Kernel &kernel,
                                                    {4, 16, 0},
                                                    {16, 16, 0}};
   for (auto &ele : candidates) {
-    const uint32_t tmp = ele[0] * ele[1];
+    const int tmp = ele[0] * ele[1];
     if (0 < tmp && tmp <= kwg_size) {
       results.push_back(ele);
     }
   }
 
-  std::vector<uint32_t> *bestLWS;
+  std::vector<int> *bestLWS;
   long bestTime;
 
+  auto internalGws = gws;
   int n = results.size();
   for (int i = 0; i < n; i++) {
     auto &candidate = candidates[i];
@@ -157,18 +158,19 @@ std::vector<uint32_t> FindKernelWorkgroupSize(cl::Kernel &kernel,
                                cl::NDRange(candidate[0], candidate[1]));
     queue.finish();
 
+    internalGws[1] = RoundUp(internalGws[1], candidate[1]);
     auto start = std::chrono::system_clock::now();
     for (int j = 0; j < 10; j++) {
       queue.enqueueNDRangeKernel(kernel, cl::NullRange,
-                                 cl::NDRange(gws[0], gws[1]),
+                                 cl::NDRange(internalGws[0], internalGws[1]),
                                  cl::NDRange(candidate[0], candidate[1]));
       queue.finish();
     }
     auto end = std::chrono::system_clock::now();
     auto span =
         std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    // spdlog::info("local_workgroup_size {}, time: {}ms", candidate,
-    // span.count() / 1000.0 / 10.0);
+    spdlog::info("local_workgroup_size {}, time: {}ms", candidate,
+    span.count() / 1000.0 / 10.0);
 
     if (i == 0 || span.count() < bestTime) {
       bestLWS = &candidate;
@@ -275,7 +277,10 @@ int main(int argc, char *argv[]) {
   runtime->BuildKernel("gemv", {"-DOP=Linear", "-DHAS_BIAS"},
                         "GemvConv1x1Impl", &gemvConvKernel);
 
+  std::vector<int> gws = {k >> 2, 1};
   idx = 0;
+  gemvConvKernel.setArg(idx++, gws[0]);
+  gemvConvKernel.setArg(idx++, gws[1]);
   gemvConvKernel.setArg(idx++, *bufferInput);
   gemvConvKernel.setArg(idx++, *bufferWeightInt4);
   gemvConvKernel.setArg(idx++, *bufferOutput);
@@ -285,9 +290,8 @@ int main(int argc, char *argv[]) {
   gemvConvKernel.setArg(idx++, k);
   gemvConvKernel.setArg(idx++, m);
 
-  std::vector<int> gws = {k >> 2, 1};
   auto lws = FindKernelWorkgroupSize(gemvConvKernel, device, queue, gws);
-  lws[0] = GetKernelMaxWorkGroupSize(gemvConvKernel, device), lws[1] = 1;
+  gws[1] = RoundUp(gws[1], lws[1]);
   spdlog::info("gemvConv kernel: {}", lws);
 
   for (int i = 0; i < benchmarkRounds; i++) {
@@ -299,12 +303,7 @@ int main(int argc, char *argv[]) {
     recorder.Record(fmt::format("GemvConv {:02d}", i));
   }
 
-  // queue.enqueueReadBuffer(*bufferOutput, CL_TRUE, 0, gemvConvOut.GetBytes(),
-  //                         gemvConvOut.cpuData);
-
-  float *res = (float *) allocator->Map(bufferOutput, 0, gemvConvOut.GetBytes(), true);
-  std::memcpy(gemvConvOut.cpuData, res, gemvConvOut.GetBytes());
-  allocator->Unmap(bufferOutput, res);
+  CopyBufferToCPU(allocator, gemvConvOut.cpuData, bufferOutput, gemvConvOut.GetBytes());
 
 #ifdef USE_OPENCL
   fastllm::ApplyDeviceMap({{"opencl", 10}}, 0, 0);

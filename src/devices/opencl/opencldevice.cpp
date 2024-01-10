@@ -102,13 +102,14 @@ void FastllmOpenCLMatVecMulFloatInt4NoZero(cl::Kernel *kernel,
   CopyBufferFromCPU(allocator, mins, weight.mins.data(), k * sizeof(float));
 
   std::vector<int> gws{k >> 2, 1};
-#ifdef __aarch64__
-  std::vector<int> lws{16, 1};
-#else
   std::vector<int> lws{16, 4};
-#endif
 
+  if (runtime->gpu_type() == GPU_ARM_MALI) {
+    gws[1] = RoundUp(gws[1], lws[1]);
+  }
   int idx = 0;
+  kernel->setArg(idx++, gws[0]);
+  kernel->setArg(idx++, gws[1]);
   kernel->setArg(idx++, *(cl::Buffer *)input.openclData_);
   kernel->setArg(idx++, *(cl::Buffer *) weight.openclData_);
   kernel->setArg(idx++, *(cl::Buffer*) output.openclData_);
