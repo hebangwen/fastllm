@@ -169,8 +169,8 @@ std::vector<int> FindKernelWorkgroupSize(cl::Kernel &kernel,
     auto end = std::chrono::system_clock::now();
     auto span =
         std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    spdlog::info("local_workgroup_size {}, time: {}ms", candidate,
-    span.count() / 1000.0 / 10.0);
+    // spdlog::info("local_workgroup_size {}, time: {}ms", candidate,
+    // span.count() / 1000.0 / 10.0);
 
     if (i == 0 || span.count() < bestTime) {
       bestLWS = &candidate;
@@ -192,11 +192,11 @@ int main(int argc, char *argv[]) {
   fastllm::PrintInstructionInfo();
   fastllm::Data input{fastllm::FLOAT32, {1, m}};
   input.Allocate(0.5f);
-  input.RandomizeData();
+  // input.RandomizeData();
   fastllm::Data weight{fastllm::INT4_NOZERO, {k, m}};
   weight.Allocate();
   weight.RandomizeData();
-  // weight.Allocate((uint8_t)1);
+  weight.Allocate((uint8_t)1);
   fastllm::Data bias{fastllm::FLOAT32, {k}};
   bias.Allocate(0.0f);
 
@@ -326,7 +326,7 @@ int main(int argc, char *argv[]) {
   output.Allocate(0.5f);
 #endif
   
-  // convOutput.Print();
+  output.Print();
   PrintOutputValues<float>({&result, &result1, &gemvConvOut, &output});
   spdlog::debug("mins: {}, scales: {}", weight.mins[0], weight.scales[0]);
 
