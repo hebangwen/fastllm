@@ -44,14 +44,14 @@ __kernel void GemvConv1x1Impl(
     in0 = vload4(0, input + (i << 3));
     in1 = vload4(0, input + (i << 3) + 4);
 
-    out0 = mad((float4) in0.s0, convert_float4(w0 >> 28) + minv, out0);
-    out0 = mad((float4) in0.s1, convert_float4((w0 >> 24) & 15) + minv, out0);
-    out0 = mad((float4) in0.s2, convert_float4((w0 >> 20) & 15) + minv, out0);
-    out0 = mad((float4) in0.s3, convert_float4((w0 >> 16) & 15) + minv, out0);
-    out0 = mad((float4) in1.s0, convert_float4((w0 >> 12) & 15) + minv, out0);
-    out0 = mad((float4) in1.s1, convert_float4((w0 >> 8) & 15) + minv, out0);
-    out0 = mad((float4) in1.s2, convert_float4((w0 >> 4) & 15) + minv, out0);
-    out0 = mad((float4) in1.s3, convert_float4(w0 & 15) + minv, out0);
+    out0 = mad((float4) in1.s2, convert_float4(w0 >> 28) + minv, out0);
+    out0 = mad((float4) in1.s3, convert_float4((w0 >> 24) & 15) + minv, out0);
+    out0 = mad((float4) in1.s0, convert_float4((w0 >> 20) & 15) + minv, out0);
+    out0 = mad((float4) in1.s1, convert_float4((w0 >> 16) & 15) + minv, out0);
+    out0 = mad((float4) in0.s2, convert_float4((w0 >> 12) & 15) + minv, out0);
+    out0 = mad((float4) in0.s3, convert_float4((w0 >> 8) & 15) + minv, out0);
+    out0 = mad((float4) in0.s0, convert_float4((w0 >> 4) & 15) + minv, out0);
+    out0 = mad((float4) in0.s1, convert_float4(w0 & 15) + minv, out0);
 
     weight_offset++;
   }  

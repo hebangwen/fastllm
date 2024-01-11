@@ -104,9 +104,6 @@ void FastllmOpenCLMatVecMulFloatInt4NoZero(cl::Kernel *kernel,
   std::vector<int> gws{k >> 2, 1};
   std::vector<int> lws{16, 4};
 
-  if (runtime->gpu_type() == GPU_ARM_MALI) {
-    gws[1] = RoundUp(gws[1], lws[1]);
-  }
   int idx = 0;
   kernel->setArg(idx++, gws[0]);
   kernel->setArg(idx++, gws[1]);
@@ -121,6 +118,9 @@ void FastllmOpenCLMatVecMulFloatInt4NoZero(cl::Kernel *kernel,
   kernel->setArg(idx++, k);
   kernel->setArg(idx++, m);
 
+  if (runtime->gpu_type() == GPU_ARM_MALI) {
+    gws[1] = RoundUp(gws[1], lws[1]);
+  }
   cl::Event event;
   runtime->command_queue().enqueueNDRangeKernel(*kernel, cl::NullRange,
                                                 cl::NDRange(gws[0], gws[1]),

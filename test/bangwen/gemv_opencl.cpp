@@ -192,7 +192,7 @@ int main(int argc, char *argv[]) {
   fastllm::PrintInstructionInfo();
   fastllm::Data input{fastllm::FLOAT32, {1, m}};
   input.Allocate(0.5f);
-  // input.RandomizeData();
+  input.RandomizeData();
   fastllm::Data weight{fastllm::INT4_NOZERO, {k, m}};
   weight.Allocate();
   weight.RandomizeData();
@@ -273,9 +273,12 @@ int main(int argc, char *argv[]) {
   int idx = 0;
   fastllm::Data gemvConvOut(fastllm::FLOAT32, {1, k});
   gemvConvOut.Allocate(0.5f);
-  cl::Kernel gemvConvKernel;
-  runtime->BuildKernel("gemv", {"-DOP=Linear", "-DHAS_BIAS"},
-                        "GemvConv1x1Impl", &gemvConvKernel);
+  // cl::Kernel gemvConvKernel;
+  // runtime->BuildKernel("gemv", {"-DOP=Linear", "-DHAS_BIAS"},
+  //                       "GemvConv1x1Impl", &gemvConvKernel);
+  std::string option = fmt::format("{} -DOP=Linear -DHAS_BIAS", COMPILE_OPTIONS);
+  auto program = buildProgram(runtime->context(), runtime->device(), {"gemv.cl"}, option);
+  cl::Kernel gemvConvKernel{program, "GemvConv1x1Impl"};
 
   std::vector<int> gws = {k >> 2, 1};
   idx = 0;
@@ -290,7 +293,8 @@ int main(int argc, char *argv[]) {
   gemvConvKernel.setArg(idx++, k);
   gemvConvKernel.setArg(idx++, m);
 
-  auto lws = FindKernelWorkgroupSize(gemvConvKernel, device, queue, gws);
+  // auto lws = FindKernelWorkgroupSize(gemvConvKernel, device, queue, gws);
+  std::vector<int> lws = {1, 32};
   gws[1] = RoundUp(gws[1], lws[1]);
   spdlog::info("gemvConv kernel: {}", lws);
 
